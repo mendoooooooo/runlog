@@ -1040,7 +1040,7 @@ const logStats = (() => {
     const quality=lastProfile.fast||uphill;
     const hold=rising||interrupted||quality||slower||objective==='steady';
     const easier=feeling==='tired'||gap||latest.effort==='hard'||hard>=2;
-    const ready=!hold&&!easier&&!loaded&&latest.effort==='easy'&&easy>=2&&hard===0;
+    const ready=feeling!=='moderate'&&!hold&&!easier&&!loaded&&latest.effort==='easy'&&easy>=2&&hard===0;
     const mixed=history.filter(p=>p.mixed&&p.run&&p.walk);
     const useIntervals=history[0].mixed||(!history[0].run&&mixed.length>=history.length/2);
     const reference=mixed.slice(0,3);
@@ -1196,6 +1196,23 @@ const logStats = (() => {
       session='Scegli un giro di circa '+km()+'. Accorcia il passo in salita, cammina quando serve e riprendi la corsa facile sul piano.';
       follow='Annota se le camminate coincidevano con le salite prima di confrontare il passo con un giro pianeggiante.';
     }
+    const cautious=easier||gap||loaded||rising||interrupted||quality||slower||!!adaptation;
+    if(!cautious&&!ready&&feeling!=='tired'){
+      goal=baseline;
+      if(objective==='speed'){
+        title='Controllo del ritmo';
+        session='Percorri circa '+km()+' al tuo impegno abituale. A metà giro scegli due tratti di 20 secondi in cui concentrarti su passi regolari e leggeri. Separali con almeno un minuto facile.';
+        follow='Confronta la facilità dei due tratti. Se il secondo è più faticoso, mantieni il ritmo facile alla prossima uscita.';
+      }else if(objective==='steady'){
+        title='Ripeti la tua seduta di riferimento';
+        session='Ripercorri circa '+km()+(structured?' alternando '+pair(baseRun,baseWalk):' a ritmo comodo')+'. Usa lo stesso percorso per confrontare la fatica finale.';
+        follow='Annota se hai avuto bisogno di più recupero rispetto all’ultima volta.';
+      }else{
+        title='Costruisci autonomia a ritmo facile';
+        session='Parti piano per circa '+km()+'. '+(structured?'Mantieni '+pair(baseRun,baseWalk)+' e prova a completare gli ultimi due cicli con la stessa facilità dei primi.':'Dividi il giro in tre parti. Nella parte centrale cerca un tratto di corsa comoda che riesci a mantenere senza fermarti.');
+        follow='Registra quanto è durato il tratto continuo più comodo: servirà per valutare una progressione.';
+      }
+    }
     const pace=median(history.map(p=>p.r.moving/p.r.km));
     // A rehearsal has its own finish line. The full session is a reference for a later day.
     const rehearsal=mode==='short'||(mode==='auto'&&(feeling==='tired'||interrupted||hard>=2));
@@ -1222,9 +1239,9 @@ const logStats = (() => {
     }
     if(budget>0&&goal*pace>budget*60){
       goal=budget*60/pace;
-      const turn=span(budget*30);
+
       title='Seduta da '+budget+' min · '+(terrain==='hills'?'collinare facile':structured?'corsa e cammino':'ritmo facile');
-      session='Hai '+budget+' minuti. Su un percorso di andata e ritorno gira entro '+turn+' o prima se il ritorno è in salita. '+
+      session='Hai '+budget+' minuti. Concludi la seduta entro questo tempo. '+
         (terrain==='hills'?'Affronta le salite a sforzo facile e cammina quando serve.':structured?'Alterna '+pair(baseRun,baseWalk)+' a ritmo comodo, interrompendo l’ultimo blocco allo scadere del tempo.':'Corri a ritmo facile e inserisci camminate libere quando serve.');
       follow='Oggi usa il tempo come limite. La distanza indicativa è '+km()+'. Annota quanto hai percorso senza accelerare per raggiungerla.';
     }
@@ -1243,33 +1260,42 @@ const logStats = (() => {
       'In prima corsia su pista da 400 m il tuo obiettivo equivale a circa '+fmt(goal/.4,1)+' giri. Conta i giri per verificare la distanza.',
       'Sul tapis roulant usa il timer per i blocchi e la distanza del display. A fine seduta inserisci manualmente i valori nel diario.'
     ];
-    session+=' '+routeAdvice[route];
-    return '<span class="lsbadge">'+title+'</span><p><strong>'+session+'</strong></p><p class="lsnote">'+(adaptation||reason)+' Riferimento: '+history.length+' uscite, distanza mediana '+fmt(median(history.map(p=>p.r.km)),2)+' km.</p><p>'+follow+'</p><div class="projection"><h3>Tempo indicativo</h3><p>Circa '+fmtTime(goal*pace)+' su '+fmt(goal,2)+' km al passo mediano delle uscite considerate. Cambiando recuperi o terreno il tempo può variare.</p></div>';
+    const focus=cautious?'Oggi il recupero ha la precedenza. Riprendi il lavoro specifico quando le sensazioni e il diario lo permettono.':objective==='speed'?'Durante i tratti di corsa controlla la regolarità del passo, poi confronta due passaggi simili.':objective==='steady'?'Ripeti i riferimenti abituali e confronta la fatica allo stesso punto del giro.':'Annota il più lungo tratto comodo senza camminata, anche se oggi mantieni la distanza abituale.';
+    return '<small>LA TUA SEDUTA</small><h2>'+title+'</h2><div class="coachNumbers"><b>'+km()+'</b><b>≈ '+span(targetTime)+'</b></div><p>'+session+'</p><p>'+routeAdvice[route]+'</p><h3>Perché questa scelta</h3><p>'+(adaptation||reason)+' '+focus+'</p><h3>Dopo la corsa</h3><p>'+follow+'</p>';
+
   }
   function coachRoom(list){
     const room=document.createElement('dialog');
     room.className='coachRoom';
-    room.innerHTML=`<style>.coachRoom{position:fixed;inset:0;margin:0;width:100%;max-width:100%;height:100%;height:100dvh;max-height:100%;border:0;background:#f5f5ee;color:#18251c;padding:0;overscroll-behavior:contain}.coachRoom article{max-width:800px;margin:auto;padding:24px clamp(16px,5vw,58px) 80px}.coachRoom header{background:#17372a;color:white;padding:28px;border-radius:20px;margin:18px 0}.coachRoom h1{font-size:clamp(32px,7vw,62px);margin:8px 0}.coachRoom label{display:grid;gap:4px}.coachRoom select{min-width:0;width:100%;padding:10px}.coachRoom details,.coachRoom #coachPlan{padding:18px;background:white;border-radius:16px;margin:12px 0}.coachRoom summary{cursor:pointer;font-weight:bold}.coachRoom button{padding:10px 16px}.coachRoom .settingGrid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr))}</style><article><button type="button" id="coachBack">← Diario</button><header><small>RUNLOG / COACH PERSONALE</small><h1>La tua prossima corsa</h1><p>Partiamo dal tuo diario. Come vuoi affrontare l’uscita di oggi?</p></header>${coachControls(list)}<details><summary>Su quali dati si basa il consiglio?</summary><div id="coachEvidence"></div></details><details><summary>E se faccio fatica a metà?</summary><p id="coachFallback"></p></details></article>`;
+    room.setAttribute('aria-label','Coach personale');
+    room.innerHTML=`<style>
+.coachRoom{position:fixed;inset:0;margin:0;width:100%;max-width:none;height:100dvh;max-height:none;border:0;padding:0;background:#f4f4eb;color:#182b21;overflow:auto;overscroll-behavior:contain}.coachRoom article{max-width:880px;margin:auto;padding:20px clamp(15px,4vw,44px) 64px}.coachRoom header{position:relative;overflow:hidden;border-radius:24px;background:repeating-radial-gradient(ellipse at 115% 125%,transparent 0 27px,#93ad7626 28px 30px,transparent 31px 46px),#153b2a;color:#fff;padding:clamp(24px,5vw,52px);margin:15px 0}.coachRoom h1{font-size:clamp(36px,7vw,72px);letter-spacing:-.055em;line-height:1.02;margin:15px 0}.coachRoom small{font:700 12px monospace;letter-spacing:.14em}.coachRoom header small{color:#c9ef89}.coachRoom button,.coachRoom select{font:inherit;cursor:pointer}.coachRoom button{padding:10px 14px;border:1px solid #c3cdbe;background:white;color:#183425;border-radius:14px}.coachRoom .goalRow{display:flex;gap:6px;margin:10px 0 16px}.goalRow button{flex:1}.goalRow button[aria-pressed=true]{background:#244b35;color:white}.coachRoom details,.coachRoom #coachPlan{border:1px solid #d3dbcc;border-radius:18px;background:#fff;padding:clamp(16px,3vw,28px);margin:12px 0}.coachRoom summary{cursor:pointer;font-weight:700}.coachRoom h2{font-size:clamp(26px,4vw,40px);margin:8px 0;line-height:1.1}.coachRoom p{line-height:1.55}.coachNumbers{display:flex;gap:10px;flex-wrap:wrap}.coachNumbers b{padding:8px 14px;background:#e8f4d4;border-radius:12px}.coachRoom .settingGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:15px;margin-top:18px}.coachRoom label{display:grid;gap:5px}.coachRoom select{width:100%;min-width:0;padding:10px;border-radius:9px}.coachRoom :focus-visible{outline:3px solid #699e38;outline-offset:2px}
+</style><article><button type="button" id="coachBack">← Diario</button><header><small>RUNLOG / STUDIO COACH</small><h1>La prossima corsa.</h1><p>Un allenamento costruito sulle tue ultime uscite.</p></header><small>OBIETTIVO DI OGGI</small><div class="goalRow"><button data-goal="endurance">Autonomia</button><button data-goal="steady">Consolidare</button><button data-goal="speed">Velocità</button></div><section id="coachPlan" aria-live="polite"></section><details><summary>Personalizza la seduta</summary>${coachControls(list)}</details><details><summary>Le attività di riferimento</summary><div id="coachEvidence"></div></details><details><summary>Se aumenta la fatica</summary><p id="coachFallback"></p></details></article>`;
     document.body.append(room);
     const get=id=>room.querySelector('#'+id);
+    let objective='endurance';
     const options=get('coachFeeling').parentElement.parentElement;
     options.className='settingGrid';
     const routes=['Percorso libero','Andata e ritorno','Anello breve','Pista da 400 m','Tapis roulant'];
-    options.insertAdjacentHTML('beforeend','<label>Dove correrai?<select id="coachRoute">'+routes.map((r,i)=>'<option value="'+i+'">'+r+'</option>').join('')+'</select></label>');
+    options.insertAdjacentHTML('beforeend','<label>Tipo di percorso<select id="coachRoute">'+routes.map((r,i)=>'<option value="'+i+'">'+r+'</option>').join('')+'</select></label>');
     options.insertAdjacentHTML('beforeend','<label style="display:flex;align-items:center;gap:8px"><input type="checkbox" style="width:auto" id="coachStaged">Dividi la seduta in due tappe con verifica della fatica</label>');
+      const valid=list.filter(r=>r.date<=dayKey(new Date())&&r.km>0&&r.moving>0);
+      const recent=valid.filter(r=>(localDate(dayKey(new Date()))-localDate(r.date))/86400000<=42);
+      const evidence=recent.length?recent.slice(0,6):valid.slice(0,1);
+      get('coachEvidence').innerHTML=valid.length?'<p>Ultime attività disponibili. Il coach confronta distanza, tempo e fatica e usa i blocchi effettivi quando li hai registrati.</p>'+evidence.map(r=>'<p>'+dayLabel(r.date)+' · '+fmt(r.km)+' km · '+fmtTime(r.moving)+'</p>').join(''):'<p>Il diario è vuoto. Registra la prima corsa per avere un riferimento personale.</p>';
     function update(){
+      room.querySelectorAll('[data-goal]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.goal===objective)));
       const feeling=get('coachFeeling').value;
       const panel=get('coachPlan');
-      panel.innerHTML=coaching(list,feeling,get('coachObjective').value,get('coachMode').value,Number(get('coachBudget').value),get('coachTerrain').value,Number(get('coachRoute').value),get('coachStaged').checked);
-      const valid=list.filter(r=>r.date<=dayKey(new Date())&&r.km>0&&r.moving>0);
-      get('coachEvidence').innerHTML=valid.length?'<p>Ultime attività disponibili. Il coach confronta distanza, tempo e fatica e usa i blocchi effettivi quando li hai registrati.</p>'+valid.slice(0,6).map(r=>'<p>'+dayLabel(r.date)+' · '+fmt(r.km)+' km · '+fmtTime(r.moving)+'</p>').join(''):'<p>Il diario è vuoto. Registra la prima corsa per avere un riferimento personale.</p>';
+      panel.innerHTML=coaching(list,feeling,objective,get('coachMode').value,Number(get('coachBudget').value),get('coachTerrain').value,Number(get('coachRoute').value),get('coachStaged').checked);
       get('coachFallback').textContent=feeling==='stop'?'Oggi hai scelto il riposo.':!valid.length?'Durante la prima uscita annota quando senti il bisogno di camminare.':'Passa alla camminata. Se riparti, puoi accorciare il blocco di corsa dal pannello live. Registra il recupero effettivo e la fatica finale.';
     }
+    room.querySelectorAll('[data-goal]').forEach(button=>button.onclick=()=>{objective=button.dataset.goal;update()});
     room.onchange=update;get('coachBack').onclick=()=>room.close();room.onclose=()=>room.remove();update();room.showModal();
   }
   function coachControls(list){
-    const options='<label>Come ti senti oggi? <select id="coachFeeling"><option value="normal">Recuperato</option><option value="tired">Gambe stanche</option><option value="stop">Preferisco riposare</option></select></label><label>Obiettivo <select id="coachObjective"><option value="endurance">Più autonomia</option><option value="steady">Consolidare</option><option value="speed">Lavorare sulla velocità</option></select></label><label>Formato della seduta <select id="coachMode"><option value="auto">Scegli in base al diario</option><option value="full">Seduta completa</option><option value="short">Prova breve · fino a 20 min</option></select></label><label>Tempo a disposizione <select id="coachBudget"><option value="0">Nessun limite</option>'+[10,15,20,25,30,40,50,60].map(n=>'<option value="'+n+'">'+n+' minuti</option>').join('')+'</select></label><label>Percorso previsto <select id="coachTerrain"><option value="usual">Percorso abituale</option><option value="hills">Giro collinare</option></select></label>';
-    return '<div style="display:grid;gap:10px;margin:12px 0">'+options+'</div><div id="coachPlan">'+coaching(list)+'</div>';
+    const options='<label>Come ti senti oggi? <select id="coachFeeling"><option value="normal">Recuperato</option><option value="moderate">Moderato</option><option value="tired">Gambe stanche</option><option value="stop">Preferisco riposare</option></select></label><label>Formato della seduta <select id="coachMode"><option value="auto">Scegli in base al diario</option><option value="full">Seduta completa</option><option value="short">Prova breve · fino a 20 min</option></select></label><label>Tempo a disposizione <select id="coachBudget"><option value="0">Nessun limite</option>'+[10,15,20,25,30,40,50,60].map(n=>'<option value="'+n+'">'+n+' minuti</option>').join('')+'</select></label><label>Terreno <select id="coachTerrain"><option value="usual">Percorso abituale</option><option value="hills">Giro collinare</option></select></label>';
+    return '<div>'+options+'</div>';
   }
   function render(){
     const list=ordered(), km=list.reduce((a,r)=>a+r.km,0),total=list.reduce((a,r)=>a+r.moving,0);
