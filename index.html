@@ -483,7 +483,7 @@ function enablePhaseAudio(){
     const Audio=window.AudioContext||window.webkitAudioContext;
     if(!Audio)return;
     phaseAudio??=new Audio();
-    phaseAudio.resume().catch(()=>{});
+    return phaseAudio.resume().catch(()=>{});
   }catch{}
 }
 function playPhaseCue(long){
@@ -653,7 +653,16 @@ function showLive(){
   toggle.onchange=()=>{fields.hidden=!toggle.checked;if(toggle.checked&&!rows.children.length){addPhase('Camminata','1:00');addPhase('Corsa','2:00')}};
   document.querySelector('#morePhase').onclick=()=>{addPhase('Corsa','1:00');rows.lastChild.querySelector('input').focus()};
   liveMap=null;
-  document.querySelector('#keepOn').onchange=async e=>{if(e.target.checked&&liveState?.running)await keepScreen();else if(liveLock){await liveLock.release();liveLock=null;document.querySelector('#lockState').textContent=''}};document.querySelector('#startLive').onclick=resumeLive;document.querySelector('#pauseLive').onclick=()=>pauseLive();
+  document.querySelector('#keepOn').onchange=async e=>{if(e.target.checked&&liveState?.running)await keepScreen();else if(liveLock){await liveLock.release();liveLock=null;document.querySelector('#lockState').textContent=''}};const signals=document.querySelector('#phaseSignals');
+  let reminded=false;
+  function soundReminder(startAfter){
+    reminded=true;
+    dialogBox('Controlla il suono','<p>Se il telefono è in silenzioso, disattiva la modalità silenziosa e controlla il volume. Premi Prova bip per verificare che si senta.</p><button class="btn" id="tryCue">Prova bip</button> <button class="btn primary" id="cueDone">'+(startAfter?'Avvia GPS':'Fatto')+'</button>');
+    document.querySelector('#tryCue').onclick=async()=>{await enablePhaseAudio();playPhaseCue(false)};
+    document.querySelector('#cueDone').onclick=()=>{modal.close();if(startAfter)resumeLive()};
+  }
+  signals.onchange=()=>{if(signals.checked)soundReminder(false)};
+  document.querySelector('#startLive').onclick=()=>{if(signals.checked&&!reminded&&!liveState?.plan)soundReminder(true);else resumeLive()};document.querySelector('#pauseLive').onclick=()=>pauseLive();
   document.querySelector('#finishLive').onclick=()=>{const pauses=loggedPauses(liveState,Date.now());pauseLive();showEditor({title:'Corsa GPS',caption:'Registrata con Runlog GPS',date:dayKey(new Date(liveState.started)),km:Math.round(liveState.km*1000)/1000,moving:Math.round(liveSeconds()),elapsed:Math.max(Math.round(liveSeconds()),Math.round((Date.now()-liveState.started)/1000)),weight:runs[0]?.weight||'',effort:'medium',points:liveState.points,samples:liveState.samples,pauses,routeBreaks:liveState.breaks,splits:liveSplits(liveState),blocks:[],bests:[],fromGPS:true,actualPhases:actualPhases(liveState,Math.round(liveSeconds())),livePlan:liveState.plan||[]})};
   document.querySelector('#discardLive').onclick=()=>{dialogBox('Scartare la registrazione GPS?','<p>La registrazione in corso verrà rimossa.</p><div class="confirmActions"><button class="btn" onclick="modal.close()">Annulla</button><button class="btn danger" id="discardLiveConfirmed">Scarta</button></div>');document.querySelector('#discardLiveConfirmed').onclick=()=>{pauseLive();liveState=null;localStorage.removeItem(liveKey);modal.close();showLive()}};
   clearInterval(liveTick);liveTick=setInterval(()=>{if(!document.querySelector('#livePanel')){clearInterval(liveTick);return}paintLive();if(liveState?.running)saveLiveDraft()},1000);paintLive();window.scrollTo(0,0);
@@ -876,7 +885,7 @@ function openRun(id) {
     }
     const guides = [lo,(lo+hi)/2,hi].map(sec=>'<path d="M50 '+y(sec)+'H580" stroke="#ced5d2"/><text x="43" y="'+(y(sec)+4)+'" text-anchor="end">'+fmtPace(sec)+'</text>').join('');
     const ticks = [0,sum/2,sum].map((v,i)=>'<text x="'+x(v)+'" y="182" text-anchor="'+['start','middle','end'][i]+'">'+num(Math.round(v*100)/100)+' km</text>').join('');
-    return '<svg viewBox="0 0 600 194" role="group" aria-label="Passo medio degli intertempi, in minuti al chilometro" class="rd-chart">'+guides+segments+ticks+'</svg><small class="muted">Ogni barra indica il passo medio del tratto. Gli spazi vuoti indicano passi non registrati. In alto trovi i tratti più veloci.</small>';
+    return '<svg viewBox="0 -22 600 216" role="group" aria-label="Passo medio degli intertempi, in minuti al chilometro" class="rd-chart">'+guides+segments+ticks+'<g id="paceTip" pointer-events="none" visibility="hidden"><rect height="25" rx="6" fill="#173b61"/><text y="17" fill="white" font-size="16" text-anchor="middle"></text></g></svg><small class="muted">Ogni barra indica il passo medio del tratto. Gli spazi vuoti indicano passi non registrati. In alto trovi i tratti più veloci.</small>';
   }
   const blocks = run.blocks || [];
   const weight = Number(run.weight);
@@ -890,29 +899,38 @@ function openRun(id) {
     if(steps[i]===null)return first+'<td>—</td><td></td><td>'+elev+'</td></tr>';
     return first+'<td>'+fmtPace(steps[i])+'</td><td><i style="width:'+Math.max(3,95*(fastest/steps[i])**3)+'%"></i></td><td>'+elev+'</td></tr>';
   }).join('');
-  app.innerHTML = '<style>.rd{max-width:1100px;margin:auto}.rd>*+*{margin-top:18px}.rd h1{font-size:clamp(2.5rem,7vw,5.5rem);line-height:.98;letter-spacing:-.06em;margin:.25em 0;overflow-wrap:anywhere}.rd h2{margin:0 0 15px;letter-spacing:-.035em}.rd .panel{padding:clamp(17px,3vw,30px)}.rd-intro p{white-space:pre-wrap;overflow-wrap:anywhere}.rd-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:1px;background:#cfd3c9;border:1px solid #cfd3c9;border-radius:18px;overflow:hidden}.rd-metric{padding:17px;background:#fffef9;display:grid;align-content:space-between;gap:12px}.rd-metric span{font-size:.8rem;color:#50594d}.rd-metric strong{font-size:clamp(1.25rem,3vw,2rem);line-height:1.1;letter-spacing:-.05em}.rd-metric small{font-size:.68rem;letter-spacing:0}.rd-map{width:100%;height:clamp(230px,42vw,410px);border-radius:14px;overflow:hidden}.rd-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}.rd-cols>*{min-width:0}.rd-chart{width:100%;height:auto;font:13px system-ui;fill:#4a554b}.rd table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;font-size:.87rem}.rd td,.rd th{padding:7px 3px;text-align:left;border-bottom:1px solid #dfe2d9}.rd td:last-child,.rd th:last-child{text-align:right}.rd td:nth-child(3){width:30%}.rd td i{display:block;background:#498bd1;height:13px;border-radius:3px}.rd-buttons{display:flex;flex-wrap:wrap;gap:10px}.rd li{margin:.45em 0}.rd summary{cursor:pointer}.rd p{line-height:1.5}@media(max-width:720px){.rd-cols{grid-template-columns:1fr}.rd-metrics{grid-template-columns:1fr 1fr}}.splitPick{background:#edf1e7;color:#172319;border:0;border-radius:6px;padding:9px;min-width:42px}.rd tr[data-split]{cursor:pointer}.rd tr.activeSplit{background:#e4ebdc}.rd #rd-split-info:not(:empty){margin-top:12px;padding:12px;background:#f4f7ee;border-radius:10px}</style>'+
+  app.innerHTML = '<style>.rd{max-width:1100px;margin:auto}.rd>*+*{margin-top:18px}.rd h1{font-size:clamp(2.5rem,7vw,5.5rem);line-height:.98;letter-spacing:-.06em;margin:.25em 0;overflow-wrap:anywhere}.rd h2{margin:0 0 15px;letter-spacing:-.035em}.rd .panel{padding:clamp(17px,3vw,30px)}.rd-intro p{white-space:pre-wrap;overflow-wrap:anywhere}.rd-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:1px;background:#cfd3c9;border:1px solid #cfd3c9;border-radius:18px;overflow:hidden}.rd-metric{padding:17px;background:#fffef9;display:grid;align-content:space-between;gap:12px}.rd-metric span{font-size:.8rem;color:#50594d}.rd-metric strong{font-size:clamp(1.25rem,3vw,2rem);line-height:1.1;letter-spacing:-.05em}.rd-metric small{font-size:.68rem;letter-spacing:0}.rd-map{width:100%;height:clamp(230px,42vw,410px);border-radius:14px;overflow:hidden}.rd-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}.rd-cols>*{min-width:0}.rd-chart{width:100%;height:auto;font:13px system-ui;fill:#4a554b}.rd table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;font-size:.87rem}.rd td,.rd th{padding:7px 3px;text-align:left;border-bottom:1px solid #dfe2d9}.rd td:last-child,.rd th:last-child{text-align:right}.rd td:nth-child(3){width:30%}.rd td i{display:block;background:#498bd1;height:13px;border-radius:3px}.rd-buttons{display:flex;flex-wrap:wrap;gap:10px}.rd li{margin:.45em 0}.rd summary{cursor:pointer}.rd p{line-height:1.5}@media(max-width:720px){.rd-cols{grid-template-columns:1fr}.rd-metrics{grid-template-columns:1fr 1fr}}.splitPick{background:#246bb4;color:white;border:0;border-radius:7px;width:8ch;height:44px;padding:2px;font-weight:bold;white-space:nowrap}.rd tr[data-split]{cursor:pointer}.rd tr.activeSplit{background:#e4ebdc}.rd #rd-split-info:not(:empty){margin-top:12px;padding:12px;background:#f4f7ee;border-radius:10px}</style>'+
     '<article class="rd"><button class="btn" id="rd-back">← Attività e statistiche</button><header class="rd-intro"><div class="eyebrow">Scheda attività · '+date+'</div><h1>'+esc(run.title)+'</h1>'+(run.caption?'<p>'+esc(run.caption)+'</p>':'')+'</header><div class="rd-buttons"><button class="btn primary" id="rd-edit">Modifica corsa</button><button class="btn" id="rd-remove">Elimina corsa</button></div>'+
     '<section class="rd-metrics">'+metric('Distanza',num(run.km),'km')+metric('Tempo in movimento',fmtTime(run.moving))+metric('Passo medio',fmtPace(run.moving/run.km),'/km')+metric('Calorie stimate',calories??'—',calories!==null?'kcal':'')+'</section>'+
     '<section class="panel"><h2>Percorso</h2>'+((run.points||[]).length?'<div id="rd-map" class="rd-map"></div>':'<p class="muted">Questa attività non ha ancora un percorso. Puoi disegnarlo da «Modifica corsa».</p>')+'</section>'+
-    '<div class="rd-cols"><section class="panel"><div class="eyebrow">Analisi / 01</div><h2>Intertempi</h2>'+(rows?'<table><thead><tr><th>Km</th><th>Passo</th><th></th><th>Dislivello</th></tr></thead><tbody>'+rows+'</tbody></table><div id="rd-split-info" aria-live="polite"></div>':'<p class="muted">Nessun intertempo inserito.</p>')+'</section><section class="panel"><div class="eyebrow">Analisi / 02</div><h2>Passo</h2>'+graph()+'<p id="paceValue" aria-live="polite"></p></section></div>'+
+    '<div class="rd-cols"><section class="panel"><div class="eyebrow">Analisi / 01</div><h2>Intertempi</h2>'+(rows?'<table><thead><tr><th>Km</th><th>Passo</th><th></th><th>Dislivello</th></tr></thead><tbody>'+rows+'</tbody></table>':'<p class="muted">Nessun intertempo inserito.</p>')+'</section><section class="panel"><div class="eyebrow">Analisi / 02</div><h2>Passo</h2>'+graph()+'</section></div>'+
     '<section class="rd-metrics">'+metric('Tempo trascorso',fmtTime(elapsed))+metric('Passo complessivo medio',fmtPace(elapsed/run.km),'/km')+metric('Intertempo più veloce',fastest?fmtPace(fastest):'—',fastest?'/km':'')+'</section>'+
     (blocks.length?'<section class="panel"><h2>Struttura allenamento</h2><ol>'+routineGroups(blocks).map(g=>'<li><strong>'+g[0].reps+' ×</strong> ('+g.map(b=>esc(labels[b.type])+' '+num(b.value)+' '+esc(b.unit)).join(' → ')+')</li>').join('')+'</ol></section>':'')+
     ((run.bests||[]).length?'<section class="panel"><h2>Prestazioni cronometrate</h2><ul>'+run.bests.map(b=>'<li>'+num(b.km*1000)+' m · '+fmtTime(b.seconds)+'</li>').join('')+'</ul></section>':'')+
-    '<details class="panel"><summary>Come sono calcolate le statistiche?</summary><p>Il passo medio usa il tempo in movimento. Il passo complessivo include anche le pause. L’intertempo più veloce è il tratto registrato con il minor tempo per chilometro, anche quando misura meno di 1 km.</p><p>La stima in piano usa 1 kcal per kg per km di corsa e 0,5 per km di camminata. Per le fasi di camminata espresse in minuti ipotizziamo 5 km/h. La distanza rimanente conta come corsa. Pendenze e velocità effettiva possono cambiare il risultato.'+(weight>0?' Peso usato: '+num(weight)+' kg.':' Aggiungi il peso per ottenere la stima.')+' <a href="https://doi.org/10.1152/jappl.1963.18.2.367" target="_blank" rel="noopener">Margaria et al., 1963</a>.</p></details>'+
+
     (run.actualPhases?.length?'<section class="panel"><h2>Blocchi effettivi GPS</h2><ol>'+run.actualPhases.map((p,i)=>'<li>'+esc(p.name)+' · '+fmtTime(p.start)+' – '+fmtTime(run.actualPhases[i+1]?.start??run.moving)+' · '+durationWords((run.actualPhases[i+1]?.start??run.moving)-p.start)+'</li>').join('')+'</ol></section>':run.livePlan?.length?'<section class="panel"><h2>Intervalli GPS</h2><ol>'+(()=>{let t=0,i=0,rows=[];while(t<run.moving&&i<10000){const p=run.livePlan[i++%run.livePlan.length];if(!(p.seconds>0))break;const end=Math.min(run.moving,t+p.seconds);rows.push('<li>'+esc(p.name)+' · '+fmtTime(t)+' – '+fmtTime(end)+' · '+durationWords(end-t)+'</li>');t=end}return rows.join('')})()+'</ol></section>':'')+
     activityMedals(run)+
+    '<details class="panel"><summary>Come sono calcolate le statistiche?</summary><p>Il passo medio usa il tempo in movimento. Il passo complessivo include anche le pause. L’intertempo più veloce è il tratto registrato con il minor tempo per chilometro, anche quando misura meno di 1 km.</p><p>La stima in piano usa 1 kcal per kg per km di corsa e 0,5 per km di camminata. Per le fasi di camminata espresse in minuti ipotizziamo 5 km/h. La distanza rimanente conta come corsa. Pendenze e velocità effettiva possono cambiare il risultato.'+(weight>0?' Peso usato: '+num(weight)+' kg.':' Aggiungi il peso per ottenere la stima.')+' <a href="https://doi.org/10.1152/jappl.1963.18.2.367" target="_blank" rel="noopener">Margaria et al., 1963</a>.</p></details>'+
     '</article>';
   document.getElementById('rd-back').onclick=()=>go('stats');
   document.getElementById('rd-edit').onclick=()=>showEditor(run);
   document.getElementById('rd-remove').onclick=()=>deleteRun(run.id);
-  function selectSplit(i){
-    app.querySelectorAll('[data-split]').forEach(row=>row.classList.toggle('activeSplit',Number(row.dataset.split)===i));
-    app.querySelectorAll('[data-chart-index]').forEach(bar=>bar.classList.toggle('selectedBar',Number(bar.dataset.chartIndex)===i));
-    document.querySelector('#rd-split-info').innerHTML=inspectSplit(i);
-    document.querySelector('#paceValue').textContent=steps[i]===null?'Passo non disponibile':'Intertempo '+splitLabel(i)+' · '+fmtTime(splits[i].seconds)+' · '+fmtPace(steps[i])+' min/km';
-  }
-  app.querySelectorAll('[data-split]').forEach(row=>row.onclick=()=>selectSplit(Number(row.dataset.split)));
-  bindChart(app,selectSplit);
+  app.querySelectorAll('.splitPick').forEach((button,i)=>{
+    button.onclick=()=>dialogBox('Dettagli del tratto',inspectSplit(i));
+  });
+  bindChart(app,i=>{
+    const bars=app.querySelectorAll('[data-chart-index]');
+    const bar=app.querySelector('[data-chart-index="'+i+'"]');
+    for(const item of bars)item.classList.toggle('selectedBar',item===bar);
+    const tip=app.querySelector('#paceTip'),label=tip.querySelector('text');
+    label.textContent='KM '+splitLabel(i)+' · '+fmtPace(steps[i])+'/km';
+    tip.setAttribute('visibility','visible');
+    const width=label.getComputedTextLength()+16,shape=bar.querySelector('path').getBBox();
+    tip.querySelector('rect').setAttribute('width',width);
+    label.setAttribute('x',width/2);
+    const left=Math.max(1,Math.min(599-width,shape.x+shape.width/2-width/2));
+    tip.setAttribute('transform','translate('+left+' '+(shape.y-30)+')');
+  });
   const map=document.getElementById('rd-map');
   if(map) mountMap(map,run.points,false,()=>{},{breaks:run.routeBreaks||[]});
   window.scrollTo(0,0);
