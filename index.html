@@ -1011,10 +1011,17 @@ const logStats = (() => {
     const phases=r.actualPhases?.length?r.actualPhases.map((p,i)=>{
       const name=p.name.toLowerCase();
       const type=/cammin|recuper|pausa|riposo/.test(name)?'walk':/sprint|scatt|allungo/.test(name)?'fast':/corsa libera/.test(name)?'unknown':/cors|run/.test(name)?'run':'unknown';
-      return {type,sec:(r.actualPhases[i+1]?.start??r.moving)-p.start};
-    }):(r.blocks||[]).map(b=>({type:b.type==='rest'?'walk':b.type,sec:b.unit==='min'?b.value*60:0}));
+      return {type,reps:1,sec:(r.actualPhases[i+1]?.start??r.moving)-p.start};
+    }):(r.blocks||[]).map(b=>({type:b.type==='rest'?'walk':b.type,reps:Math.max(1,Number(b.reps)||1),sec:b.unit==='min'?b.value*60:0}));
     const times=type=>phases.filter(p=>p.type===type&&p.sec>0).map(p=>p.sec);
-    return {r,run:median(times('run')),walk:median(times('walk')),longest:Math.max(0,...times('run')),mixed:phases.some(p=>p.type==='walk'),fast:phases.some(p=>p.type==='fast')};
+    function typical(type){
+      const groups=phases.filter(p=>p.type===type&&p.sec>0).sort((a,b)=>a.sec-b.sec);
+      const total=groups.reduce((n,p)=>n+p.reps,0);
+      let sum=0;
+      for(const p of groups){sum+=p.reps;if(sum>=total/2)return p.sec}
+      return 0;
+    }
+    return {r,run:typical('run'),walk:typical('walk'),longest:Math.max(0,...times('run')),mixed:phases.some(p=>p.type==='walk'),fast:phases.some(p=>p.type==='fast')};
   }
   function warmupRow(seconds){
     return '<li><b>Riscaldamento · '+fmtTime(seconds)+'</b><br>'+fmtTime(Math.round(seconds*.75))+' di corsa blanda, poi '+fmtTime(seconds-Math.round(seconds*.75))+' di marcia sul posto sollevando leggermente le ginocchia.</li>';
@@ -1027,9 +1034,10 @@ const logStats = (() => {
     function segment(seconds,label){
       let work,rest,action;
       if(objective==='speed'){
-        work=Math.min(limited?15:25,Math.max(1,Math.floor(seconds/4)));
-        rest=Math.max(limited?90:60,walk);
-        action=limited?' con passi brevi e regolari a ritmo facile':' a passo brillante controllato';
+        work=Math.min(Math.max(30,run||120),seconds);
+        rest=alternating?walk:60;
+        const finish=Math.min(limited?15:25,Math.floor(work/3));
+        action=' di corsa: '+fmtTime(work-finish)+' facili, poi '+fmtTime(finish)+(limited?' aumentando appena il ritmo, con falcata naturale':' accelerando gradualmente fino a un ritmo brillante e controllato');
       }else if(objective==='steady'){
         work=Math.max(15,run||120);rest=walk;action=' al ritmo abituale';
       }else{
@@ -1043,7 +1051,8 @@ const logStats = (() => {
         const recovery=alternating?' di cammino':' di corsa molto facile';
         const count=Math.floor(seconds/(work+rest)),remaining=seconds-count*(work+rest);
         instruction=count?count+' × ('+fmtTime(work)+action+' + '+fmtTime(rest)+recovery+'). ':'';
-        if(remaining)instruction+=count?'Chiudi con '+fmtTime(remaining)+' facili.':'Esegui '+fmtTime(Math.min(work,remaining))+action+(remaining>work?', poi '+fmtTime(remaining-work)+recovery:'')+'.';
+        if(remaining&&objective==='speed'&&!count)instruction+='Corri facile per '+fmtTime(remaining)+'.';
+        else if(remaining)instruction+=count?'Chiudi con '+fmtTime(remaining)+' facili.':'Esegui '+fmtTime(Math.min(work,remaining))+action+(remaining>work?', poi '+fmtTime(remaining-work)+recovery:'')+'.';
       }
       rows.push([seconds,label,instruction]);
     }
@@ -1051,15 +1060,15 @@ const logStats = (() => {
     else segment(main,'Allenamento');
     return '<ol class="coachSteps">'+(warm?warmupRow(warm):'')+rows.map(([time,label,cue])=>'<li><b>'+label+' · '+fmtTime(time)+'</b><br>'+cue+'</li>').join('')+'</ol>';
   }
-  function coaching(list,feeling='normal',objective='endurance',mode='auto',budget=0,terrain='usual',route=0,staged=false,previous='usual',legs='fresh',warming=false){
+  function coaching(list,feeling='normal',objective='endurance',mode='auto',budget=0,terrain='usual',route=0,staged=false,previous='usual',legs='fresh',warming=false,pauseCause='unknown'){
     const today=dayKey(new Date());
-    list=list.filter(r=>r.date<=today&&r.km>0&&r.moving>0);
+    list=list.filter(r=>r.date<=today&&Number.isFinite(r.km)&&r.km>0&&Number.isFinite(r.moving)&&r.moving>0).sort((a,b)=>b.date.localeCompare(a.date));
     if(feeling==='stop')return '<h3>Oggi scegli il riposo</h3><p>Hai indicato di non sentirti pronto per correre. Rivaluta la proposta quando ti sentirai recuperato.</p>';
     const names={improve:'Prova a migliorare',speed:'Ritmo e coordinazione',steady:'Ripeti il tuo ritmo',endurance:'Autonomia nella corsa'};
-    const extraLoad=legs==='loaded'||previous==='unfinished';
+    const extraLoad=legs==='loaded'||previous==='unfinished'||pauseCause==='fatigue';
     if(!list.length){
       const minutes=Math.min(budget||20,mode==='short'||feeling==='tired'||extraLoad?10:15);
-      return '<small>PRIMA USCITA · PROPOSTA INIZIALE</small><h2>'+names[objective]+'</h2>'+workoutPhases(objective,minutes*60,60,60,true,staged,warming)+'<p>Il diario è vuoto. Questi tempi sono un punto di partenza. Registra i blocchi completati e la fatica per personalizzare la prossima proposta.</p>';
+      return '<small>PRIMA USCITA · PROPOSTA INIZIALE</small><h2>'+names[objective]+'</h2>'+workoutPhases(objective==='speed'&&(extraLoad||feeling==='tired')?'steady':objective,minutes*60,60,60,true,staged,warming)+'<p>Il diario è vuoto. Questi tempi sono un punto di partenza. Registra i blocchi completati e la fatica per personalizzare la prossima proposta.</p>';
     }
     const last=list[0],age=r=>Math.round((localDate(dayKey(new Date()))-localDate(r.date))/86400000);
     const recent=list.filter(r=>age(r)>=0&&age(r)<=42).slice(0,6);
@@ -1070,54 +1079,84 @@ const logStats = (() => {
     const gap=age(latest)>10,loaded=history.length>1&&latest.km>1.3*median(history.slice(1).map(p=>p.r.km));
     const week=(offset)=>list.filter(r=>age(r)>=offset&&age(r)<offset+7).reduce((sum,r)=>sum+r.moving/60,0);
     const pastWeeks=[7,14,21].map(week);
-    const rising=pastWeeks.filter(n=>n>0).length>=2&&week(0)>1.25*median(pastWeeks);
+    const rising=pastWeeks.filter(n=>n>0).length>=2&&week(0)>1.25*median(pastWeeks.filter(n=>n>0));
     const lastProfile=history[0];
     const stopTime=latest.pauses?.reduce((n,p)=>n+p.seconds,0)||0;
-    const interrupted=stopTime>latest.moving*.12;
+    const interrupted=pauseCause!=='external'&&stopTime>latest.moving*.12;
     const uphill=(latest.splits||[]).reduce((n,p)=>n+Math.max(0,p.elev||0),0)/latest.km>20;
     const similar=history.slice(1).filter(p=>p.mixed===lastProfile.mixed&&p.fast===lastProfile.fast&&Math.abs(p.r.km/latest.km-1)<.25);
     const slower=similar.length>=2&&!uphill&&latest.moving/latest.km>1.1*median(similar.map(p=>p.r.moving/p.r.km));
+    const previousSimilar=similar[0];
+    const effortLevel={easy:1,medium:2,hard:3};
+    const knownEffort=Boolean(effortLevel[latest.effort]);
+    const moreEffort=previousSimilar&&effortLevel[latest.effort]>effortLevel[previousSimilar.r.effort];
+    const consecutive=history.length>=3&&new Set(history.slice(0,3).map(p=>p.r.date)).size===3&&age(history[2].r)-age(latest)<=2;
+    const signals=[];
+    if(gap)signals.push('L’ultima uscita risale a '+age(latest)+' giorni fa.');
+    if(moreEffort)signals.push('A distanza simile hai segnato più fatica che nella seduta precedente.');
+    if(consecutive)signals.push('Hai corso per tre giorni consecutivi.');
+    if(rising)signals.push('I minuti di questa settimana superano il tuo volume recente.');
+    if(loaded)signals.push('L’ultima distanza è cresciuta di oltre il 30% rispetto alla mediana delle precedenti.');
+    if(slower)signals.push('Il passo è calato su uscite di distanza e struttura simili.');
+    if(stopTime>0&&pauseCause==='external')signals.push('Hai attribuito le soste a cause esterne: per il confronto uso il tempo in movimento.');
+    if(interrupted&&pauseCause==='unknown')signals.push('Le soste pesano sul confronto e il diario non ne specifica la causa.');
+    if(!knownEffort)signals.push('Manca la fatica dell’ultima seduta: il passo da solo è un riferimento parziale.');
+    if(history.length===1)signals.push('C’è una sola uscita di riferimento.');
+    const holdProgress=Boolean(moreEffort||consecutive||!knownEffort||rising||loaded||slower||interrupted);
+    const signalNote=signals.length?'<p>'+signals.join(' ')+'</p>':'';
     const quality=lastProfile.fast||uphill;
-    const hold=rising||interrupted||quality||slower||objective==='steady';
+    const hold=holdProgress||rising||interrupted||quality||slower||objective==='steady';
     const easier=extraLoad||feeling==='tired'||gap||latest.effort==='hard'||hard>=2;
     const ready=feeling!=='moderate'&&!hold&&!easier&&!loaded&&latest.effort==='easy'&&easy>=2&&hard===0;
     const mixed=history.filter(p=>p.mixed&&p.run&&p.walk);
     const useIntervals=history[0].mixed||(!history[0].run&&mixed.length>=history.length/2);
     const reference=mixed.slice(0,3);
-    const baseRun=reference.length?median(reference.map(p=>p.run)):120;
-    const baseWalk=reference.length?median(reference.map(p=>p.walk)):60;
+    const baseRun=reference[0]?.run||120;
+    const baseWalk=reference[0]?.walk||60;
     const continuous=ready&&useIntervals&&reference.length>=2&&reference.filter(p=>p.longest>=480&&p.walk<=p.run/3&&p.r.effort!=='hard').length>=2;
     let goal=baseline*(age(latest)>28 ? .55 : easier ? .8 : 1),title,session,follow;
-    const reason=extraLoad?(legs==='loaded'?'Hai indicato un lavoro recente sulle gambe.':'Nell’ultima seduta hai interrotto i blocchi prima del previsto.'):feeling==='tired'?'Oggi segnali gambe stanche.':gap?'È passato un po’ di tempo dall’ultima uscita.':latest.effort==='hard'?'Hai segnato l’ultima uscita come impegnativa.':hard>=2?'Due delle ultime uscite sono state impegnative.':rising?'Negli ultimi sette giorni hai accumulato '+fmt(week(0),0)+' minuti, sopra il tuo volume settimanale recente.':interrupted?'L’ultima uscita include pause rilevanti. Il diario non ne indica la causa: prima di aumentare, verifica come va una seduta regolare.':quality?'L’ultima uscita includeva tratti veloci o salite: per la prossima privilegia un ritmo facile.':slower?'Il passo è stato più lento delle uscite recenti di distanza simile. Verifica le sensazioni prima di aumentare.':objective==='steady'?'Hai scelto di consolidare il ritmo attuale.':loaded?'L’ultima distanza è già aumentata rispetto alle precedenti.':ready?'Hai registrato almeno due uscite facili e nessuna delle ultime tre è stata impegnativa.':'Conviene verificare come rispondi a un altro allenamento a carico simile.';
+    const reason=pauseCause==='fatigue'?'Hai indicato di esserti fermato per fatica.':extraLoad?(legs==='loaded'?'Hai indicato un lavoro recente sulle gambe.':'Nell’ultima seduta hai interrotto i blocchi prima del previsto.'):feeling==='tired'?'Oggi segnali gambe stanche.':gap?'È passato un po’ di tempo dall’ultima uscita.':latest.effort==='hard'?'Hai segnato l’ultima uscita come impegnativa.':hard>=2?'Due delle ultime uscite sono state impegnative.':rising?'Negli ultimi sette giorni hai accumulato '+fmt(week(0),0)+' minuti, sopra il tuo volume settimanale recente.':interrupted?'L’ultima uscita include pause rilevanti. Il diario non ne indica la causa: prima di aumentare, verifica come va una seduta regolare.':quality?'L’ultima uscita includeva tratti veloci o salite: per la prossima privilegia un ritmo facile.':slower?'Il passo è stato più lento delle uscite recenti di distanza simile. Verifica le sensazioni prima di aumentare.':objective==='steady'?'Hai scelto di consolidare il ritmo attuale.':loaded?'L’ultima distanza è già aumentata rispetto alle precedenti.':ready?'Hai registrato almeno due uscite facili e nessuna delle ultime tre è stata impegnativa.':'Conviene verificare come rispondi a un altro allenamento a carico simile.';
     if(objective==='improve'){
-      const reference=history.find(p=>p.mixed&&p.run&&p.walk);
-      const profile=reference?.r;
-      const first=profile?.actualPhases||[];
-      const firstRun=first[1]&&/^corsa$/i.test(first[0].name)?first[1].start-first[0].start:0;
-      const firstWalk=first[2]&&/cammin/i.test(first[1].name)?first[2].start-first[1].start:0;
-      const run=firstRun||reference?.run||120, walk=firstWalk||reference?.walk||60;
-      const restrained=easier||rising||loaded||terrain==='hills';
-      const stable=history.length>=2&&!restrained&&!slower;
-      const reduceWalk=stable&&easy>=2&&walk>=45;
-      const extendRun=stable&&!reduceWalk;
-      const seconds=Math.max(3,Math.round(Math.min(latest.moving*(restrained?.8:1),mode==='short'?1200:Infinity,budget?budget*60:Infinity)));
+      const reference=lastProfile.mixed&&lastProfile.run&&lastProfile.walk?lastProfile:null;
+      const run=reference?.run||120,walk=reference?.walk||60;
+      const prior=history.slice(1).find(p=>p.mixed&&p.run&&p.walk);
+      const effortRank={easy:1,medium:2,hard:3};
+      const harder=prior&&effortRank[latest.effort]>effortRank[prior.r.effort];
+      const restrained=holdProgress||quality||easier||rising||loaded||slower||interrupted||terrain==='hills'||harder;
+      const stable=history.length>=2&&!restrained;
+      const extra=!reference&&stable&&easy>=2?Math.min(120,latest.moving*.04):0;
+      const seconds=Math.max(3,Math.round(Math.min((latest.moving+extra)*(age(latest)>28?.55:restrained?.8:1),mode==='short'||mode==='auto'&&extraLoad?1200:Infinity,budget?budget*60:Infinity)));
       const intro=warming?Math.min(120,Math.floor(seconds*.2)):0;
       const available=seconds-intro,cycle=run+walk;
       const prefix=intro?warmupRow(intro):'';
       let task,why;
+      const trialCycle=available>=2*(run+walk)+15;
+      const repeatable=Boolean(prior&&Math.abs(prior.run/run-1)<.12&&Math.abs(prior.walk/walk-1)<.2);
+      const regular=stable&&repeatable&&easy>=2;
       if(reference){
-        const cycles=Math.floor(available/cycle);
-        const changedRun=run+(extendRun?15:0),changedWalk=walk-(reduceWalk?15:0);
-        const attempt=cycles>=2&&(extendRun||reduceWalk);
-        const trialAt=staged?Math.max(2,Math.ceil(cycles/2)):2;
-        task='Inizia con '+fmtTime(run)+' di corsa e '+fmtTime(walk)+' di cammino. ';
-        task+=attempt?'Nel ciclo '+trialAt+' prova '+fmtTime(changedRun)+' di corsa e '+fmtTime(changedWalk)+' di cammino. Poi torna allo schema iniziale.':'Mantieni queste durate per questa uscita.';
-        why=attempt?(extendRun?'Provi 15 secondi di corsa in più una sola volta, mantenendo il recupero abituale.':'Le uscite facili consentono di provare un solo recupero più corto di 15 secondi.'):'Oggi la prova consiste nel completare i cicli con uno sforzo uniforme.';
+        let work=run,recovery=walk,step=0,cut=0;
+        if(restrained){
+          if(easier||gap){work=Math.max(15,Math.round(run*.8/5)*5);recovery+=15}
+          why='Prima di aumentare, verifica che il giro ridotto risulti comodo.';
+        }else if(!stable||!trialCycle){
+          why='Raccogli un’altra uscita confrontabile prima di modificare i blocchi.';
+        }else if(regular&&walk>=45){
+          cut=Math.min(15,Math.round(walk*.25));why='Hai ripetuto durate simili con più uscite facili. Prova a recuperare un poco meno.';
+        }else{
+          step=Math.min(30,Math.max(5,Math.round(run*.1/5)*5));why='Prova un piccolo aumento della corsa mantenendo il recupero abituale.';
+        }
+        const trials=regular&&available>=6*(run+walk+step)?2:1;
+        const firstTrial=staged?Math.max(2,Math.floor(available/(2*(run+walk+step)))):2;
+        task='Alterna '+fmtTime(work)+' di corsa e '+fmtTime(recovery)+' di cammino. ';
+        if(step||cut)task+='Nel ciclo '+firstTrial+(trials===2?' e nel ciclo '+(firstTrial+2):'')+' prova '+fmtTime(run+step)+' di corsa e '+fmtTime(walk-cut)+' di cammino. Negli altri cicli mantieni le durate iniziali.';
+        why='Blocco tipico recente: '+fmtTime(run)+' + '+fmtTime(walk)+'. '+(prior?'Nell’uscita precedente con intervalli: '+fmtTime(prior.run)+' + '+fmtTime(prior.walk)+'. ':'')+why;
       }else{
-        task='Corri facile. '+(stable?'A metà seduta prova un minuto continuo in più prima della prima camminata che avresti fatto, se serve.':'Mantieni una cadenza comoda e annota il tratto continuo più lungo.');
-        why='Il diario non mostra uno schema corsa/cammino con durate misurabili.';
+        const paceNow=latest.moving/latest.km;
+        const addition=stable&&easy>=2?Math.min(120,Math.round(latest.moving*.04)):0;
+        task='Corri facile per '+fmtTime(available)+'. '+(addition&&available>latest.moving?'La proposta include '+fmtTime(Math.max(0,Math.min(addition,available-latest.moving)))+' oltre la durata precedente, entro il tempo disponibile.':'Controlla il ritmo a metà e cerca una seconda metà altrettanto regolare.');
+        why='L’ultima attività non contiene una coppia misurata di corsa e cammino. Il riferimento è il tempo in movimento ('+fmtTime(latest.moving)+') al passo medio di '+fmtTime(paceNow)+'/km.';
       }
-      return '<small>LA TUA SEDUTA</small><h2>Prova a migliorare</h2><div class="coachNumbers"><b>'+fmtTime(seconds)+'</b></div><ol class="coachSteps">'+prefix+'<li><b>Allenamento · '+fmtTime(available)+'</b><br>'+task+' Concludi allo scadere del tempo.</li></ol><h3>Perché questa scelta</h3><p>'+why+' Riferimento: '+history.length+' uscite. '+(restrained?reason:'')+'</p><p>'+(['Usa il percorso abituale.','Gira dopo circa '+fmtTime(seconds/2)+' per rientrare.','Usa ogni passaggio dalla partenza per controllare il tempo.','Conta i giri di pista.','Registra la distanza del tapis roulant.'][route])+'</p>';
+      return '<small>LA TUA SEDUTA</small><h2>Prova a migliorare</h2><div class="coachNumbers"><b>'+fmtTime(seconds)+'</b></div><ol class="coachSteps">'+prefix+'<li><b>Allenamento · '+fmtTime(available)+'</b><br>'+task+' Concludi allo scadere del tempo.</li></ol><h3>Perché questa scelta</h3><p>'+why+' Riferimento: '+history.length+' uscite. '+(restrained?reason:'')+'</p>'+signalNote+'<p>'+(['Usa il percorso abituale.','Gira dopo circa '+fmtTime(seconds/2)+' per rientrare.','Usa ogni passaggio dalla partenza per controllare il tempo.','Conta i giri di pista.','Registra la distanza del tapis roulant.'][route])+'</p>';
     }
     if(age(latest)>28){
       title='Ripartenza dopo una pausa';
@@ -1322,15 +1361,16 @@ const logStats = (() => {
       session+=structured?'Se ti senti comodo riprendi lo schema previsto. Se la fatica aumenta, nella seconda tappa torna alle durate abituali e allunga la camminata quando serve.':'Se sei a tuo agio continua con la seconda tappa. Se la fatica sale, accorciala e rientra a ritmo facile.';
       follow+=' Annota la differenza di fatica tra le due metà.';
     }
-    const conservative=cautious||feeling==='moderate'||history.length<2;
+    const conservative=holdProgress||cautious||feeling==='moderate'||history.length<2;
     const scale=extraLoad?.85:1;
     goal*=scale*(objective==='speed'?.9:1);
     const targetTime=goal*pace;
     const walkTime=structured?baseWalk:gap?60:0;
     const workTime=structured?baseRun:120;
-    const phaseRun=previous==='unfinished'?workTime*.75:workTime;
+    const phaseRun=gap?Math.min(workTime,age(latest)>28?60:120):previous==='unfinished'?workTime*.75:workTime;
     const phaseWalk=walkTime>0&&extraLoad?walkTime+15:walkTime;
-    const phases=workoutPhases(objective,targetTime,phaseRun,phaseWalk,conservative,staged,warming);
+    const executionGoal=objective==='speed'&&(holdProgress||quality||easier||terrain==='hills')?'steady':objective;
+    const phases=workoutPhases(executionGoal,targetTime,phaseRun,phaseWalk,conservative,staged,warming);
     const routeAdvice=[
       'Scegli un tratto familiare. Controlla come ti senti dopo circa '+span(targetTime/2)+' prima di completare il giro.',
       'Su andata e ritorno gira intorno a '+span(targetTime/2)+', prima se il ritorno è in salita.',
@@ -1340,7 +1380,7 @@ const logStats = (() => {
     ];
     const focus=cautious?'Oggi il recupero ha la precedenza. Riprendi il lavoro specifico quando le sensazioni e il diario lo permettono.':objective==='speed'?'Durante i tratti di corsa controlla la regolarità del passo, poi confronta due passaggi simili.':objective==='steady'?'Ripeti i riferimenti abituali e confronta la fatica allo stesso punto del giro.':'Annota il più lungo tratto comodo senza camminata, anche se oggi mantieni la distanza abituale.';
     const special=objective==='endurance'&&continuous&&!warming&&!cautious&&!extraLoad&&!rehearsal&&!budget&&!staged;
-    return '<small>LA TUA SEDUTA</small><h2>'+(special?title:names[objective])+'</h2><div class="coachNumbers"><b>≈ '+km()+'</b><b>'+span(targetTime)+'</b></div>'+(special?'<p>'+session+'</p>':phases)+'<p>'+routeAdvice[route]+'</p><h3>Perché questa scelta</h3><p>'+reason+' '+(adaptation||'')+' '+focus+'</p><p>Riferimento: '+history.length+' uscite · distanza mediana '+fmt(median(history.map(p=>p.r.km)),2)+' km.</p><h3>Dopo la corsa</h3><p>Registra se hai completato i blocchi e quanto è stata faticosa la parte finale.</p>';
+    return '<small>LA TUA SEDUTA</small><h2>'+(special?title:executionGoal!==objective?'Velocità rinviata · seduta facile':names[objective])+'</h2><div class="coachNumbers"><b>≈ '+km()+'</b><b>'+span(targetTime)+'</b></div>'+(special?'<p>'+session+'</p>':phases)+'<p>'+routeAdvice[route]+'</p><h3>Perché questa scelta</h3><p>'+reason+' '+(adaptation||'')+' '+focus+'</p>'+signalNote+'<p>Riferimento: '+history.length+' uscite · distanza mediana '+fmt(median(history.map(p=>p.r.km)),2)+' km.</p><h3>Dopo la corsa</h3><p>'+(executionGoal==='speed'?'Confronta il primo e l’ultimo cambio di ritmo: annota se sei riuscito a mantenere il controllo in entrambi.':executionGoal==='steady'?'Confronta la fatica finale e il numero di recuperi con la seduta di riferimento.':'Segna la durata del tratto continuo più comodo e le eventuali camminate extra.')+'</p>';
 
   }
   function coachRoom(list){
@@ -1348,7 +1388,7 @@ const logStats = (() => {
     room.className='coachRoom';
     room.setAttribute('aria-label','Coach personale');
     room.innerHTML=`<style>
-.coachRoom{position:fixed;inset:0;margin:0;width:100%;max-width:none;height:100dvh;max-height:none;border:0;padding:0;background:#f4f4eb;color:#182b21;overflow:auto;overscroll-behavior:contain}.coachRoom article{max-width:880px;margin:auto;padding:20px clamp(15px,4vw,44px) 64px}.coachRoom header{position:relative;overflow:hidden;border-radius:24px;background:repeating-radial-gradient(ellipse at 115% 125%,transparent 0 27px,#93ad7626 28px 30px,transparent 31px 46px),#153b2a;color:#fff;padding:clamp(24px,5vw,52px);margin:15px 0}.coachRoom h1{font-size:clamp(36px,7vw,72px);letter-spacing:-.055em;line-height:1.02;margin:15px 0}.coachSteps{padding:0;list-style:none}.coachSteps li{padding:12px 14px;border-left:3px solid #91b366;background:#f2f6ee;margin:8px 0;line-height:1.45}.coachRoom small{font:700 12px monospace;letter-spacing:.14em}.coachRoom header small{color:#c9ef89}.coachRoom button,.coachRoom select{font:inherit;cursor:pointer}.coachRoom button{padding:10px 14px;border:1px solid #c3cdbe;background:white;color:#183425;border-radius:14px}.coachRoom .goalRow{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 16px}.goalRow button{flex:1}.goalRow button[aria-pressed=true]{background:#244b35;color:white}.coachRoom details,.coachRoom #coachPlan{border:1px solid #d3dbcc;border-radius:18px;background:#fff;padding:clamp(16px,3vw,28px);margin:12px 0}.coachRoom summary{cursor:pointer;font-weight:700}.coachRoom h2{font-size:clamp(26px,4vw,40px);margin:8px 0;line-height:1.1}.coachRoom p{line-height:1.55}.coachNumbers{display:flex;gap:10px;flex-wrap:wrap}.coachNumbers b{padding:8px 14px;background:#e8f4d4;border-radius:12px}.coachRoom .settingGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:15px;margin-top:18px}.coachRoom label{display:grid;gap:5px}.coachRoom select{width:100%;min-width:0;padding:10px;border-radius:9px}.coachRoom :focus-visible{outline:3px solid #699e38;outline-offset:2px}
+dialog.coachRoom::backdrop{background:#f4f4eb;backdrop-filter:none}html:has(dialog.coachRoom[open]),body:has(dialog.coachRoom[open]){overflow:hidden}dialog.coachRoom[open]{display:block;box-sizing:border-box;position:fixed;inset:0;margin:0;width:100vw;min-width:100vw;max-width:none;height:100vh;height:100dvh;min-height:100dvh;max-height:none;border-radius:0;transform:none;border:0;padding:0;background:#f4f4eb;color:#182b21;overflow:auto;overscroll-behavior:contain}.coachRoom article{max-width:880px;margin:auto;padding:max(20px,env(safe-area-inset-top)) clamp(15px,4vw,44px) max(64px,env(safe-area-inset-bottom))}.coachRoom header{position:relative;overflow:hidden;border-radius:24px;background:repeating-radial-gradient(ellipse at 115% 125%,transparent 0 27px,#93ad7626 28px 30px,transparent 31px 46px),#153b2a;color:#fff;padding:clamp(24px,5vw,52px);margin:15px 0}.coachRoom h1{font-size:clamp(36px,7vw,72px);letter-spacing:-.055em;line-height:1.02;margin:15px 0}.coachSteps{padding:0;list-style:none}.coachSteps li{padding:12px 14px;border-left:3px solid #91b366;background:#f2f6ee;margin:8px 0;line-height:1.45}.coachRoom small{font:700 12px monospace;letter-spacing:.14em}.coachRoom header small{color:#c9ef89}.coachRoom button,.coachRoom select{font:inherit;cursor:pointer}.coachRoom button{padding:10px 14px;border:1px solid #c3cdbe;background:white;color:#183425;border-radius:14px}.coachRoom .goalRow{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 16px}.goalRow button{flex:1}.goalRow button[aria-pressed=true]{background:#244b35;color:white}.coachRoom details,.coachRoom #coachPlan{border:1px solid #d3dbcc;border-radius:18px;background:#fff;padding:clamp(16px,3vw,28px);margin:12px 0}.coachRoom summary{cursor:pointer;font-weight:700}.coachRoom h2{font-size:clamp(26px,4vw,40px);margin:8px 0;line-height:1.1}.coachRoom p{line-height:1.55}.coachNumbers{display:flex;gap:10px;flex-wrap:wrap}.coachNumbers b{padding:8px 14px;background:#e8f4d4;border-radius:12px}.coachRoom .settingGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:15px;margin-top:18px}.coachRoom label{display:grid;gap:5px}.coachRoom select{width:100%;min-width:0;padding:10px;border-radius:9px}.coachRoom :focus-visible{outline:3px solid #699e38;outline-offset:2px}
 </style><article><button type="button" id="coachBack">← Diario</button><header><small>RUNLOG / STUDIO COACH</small><h1>La prossima corsa.</h1><p>Un allenamento costruito sulle tue ultime uscite.</p></header><small>OBIETTIVO DI OGGI</small><div class="goalRow"><button data-goal="endurance">Autonomia</button><button data-goal="steady">Consolidare</button><button data-goal="speed">Velocità</button><button data-goal="improve">Prova a migliorare</button></div><section id="coachPlan" aria-live="polite"></section><details><summary>Personalizza la seduta</summary>${coachControls(list)}</details><details><summary>Le attività di riferimento</summary><div id="coachEvidence"></div></details><details><summary>Se aumenta la fatica</summary><p id="coachFallback"></p></details></article>`;
     document.body.append(room);
     const get=id=>room.querySelector('#'+id);
@@ -1364,11 +1404,12 @@ const logStats = (() => {
       get('coachEvidence').innerHTML=valid.length?'<p>Ultime attività disponibili. Il coach confronta distanza, tempo e fatica e usa i blocchi effettivi quando li hai registrati.</p>'+evidence.map(r=>'<p>'+dayLabel(r.date)+' · '+fmt(r.km)+' km · '+fmtTime(r.moving)+'</p>').join(''):'<p>Il diario è vuoto. Registra la prima corsa per avere un riferimento personale.</p>';
     options.insertAdjacentHTML('beforeend','<label>Ultimi blocchi della scorsa uscita<select id="coachLast"><option value="usual">Completati o dato assente</option><option value="unfinished">Accorciati per fatica</option></select></label><label>Carico sulle gambe nelle ultime 48 ore<select id="coachLegs"><option value="fresh">Abituale</option><option value="loaded">Palestra o sport impegnativo</option></select></label>');
     options.insertAdjacentHTML('beforeend','<label><span><input type="checkbox" id="coachWarm"> Includi riscaldamento guidato</span><small>Fino a 1:30 di corsa blanda + 0:30 di mobilità, inclusi nel tempo disponibile.</small></label>');
+    options.insertAdjacentHTML('beforeend','<label>Motivo delle soste nell’ultima uscita<select id="coachStops"><option value="unknown">Non indicato</option><option value="external">Semafori o imprevisti esterni</option><option value="fatigue">Recupero per fatica</option></select></label>');
     function update(){
       room.querySelectorAll('[data-goal]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.goal===objective)));
       const feeling=get('coachFeeling').value;
       const panel=get('coachPlan');
-      panel.innerHTML=coaching(list,feeling,objective,get('coachMode').value,Number(get('coachBudget').value),get('coachTerrain').value,Number(get('coachRoute').value),get('coachStaged').checked,get('coachLast').value,get('coachLegs').value,get('coachWarm').checked);
+      panel.innerHTML=coaching(list,feeling,objective,get('coachMode').value,Number(get('coachBudget').value),get('coachTerrain').value,Number(get('coachRoute').value),get('coachStaged').checked,get('coachLast').value,get('coachLegs').value,get('coachWarm').checked,get('coachStops').value);
       get('coachFallback').textContent=feeling==='stop'?'Oggi hai scelto il riposo.':!valid.length?'Durante la prima uscita annota quando senti il bisogno di camminare.':'Passa alla camminata. Se riparti, puoi accorciare il blocco di corsa dal pannello live. Registra il recupero effettivo e la fatica finale.';
     }
     room.querySelectorAll('[data-goal]').forEach(button=>button.onclick=()=>{objective=button.dataset.goal;update()});
