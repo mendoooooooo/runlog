@@ -857,18 +857,36 @@ function openRun(id) {
     if(!a||a.part!==b.part||b.km<=a.km)return null;
     return a.seconds+(b.seconds-a.seconds)*(km-a.km)/(b.km-a.km);
   }
+  function phaseTable(headings,rows){
+    return '<table class="phaseTable"><thead><tr>'+headings.map(h=>'<th scope="col">'+h+'</th>').join('')+'</tr></thead><tbody>'+rows.map(row=>'<tr>'+row.map(c=>'<td>'+esc(c)+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
+  }
+  function distanceAt(t){
+    const samples=run.samples||[];
+    if(!samples.length)return null;
+    if(t===0)return 0;
+    if(t===run.moving)return samples.at(-1).km;
+    const i=samples.findIndex(b=>b.seconds>=t);
+    if(i<0)return null;
+    const b=samples[i],a=samples[i-1];
+    if(b.seconds===t)return b.km;
+    if(!a||a.part!==b.part)return null;
+    return a.km+(b.km-a.km)*(t-a.seconds)/(b.seconds-a.seconds);
+  }
   function inspectSplit(i){
     const from=bounds[i],to=bounds[i+1],start=boundaryTime(from),end=boundaryTime(to);
     const pieces=[];
     if(start!==null&&end!==null){
       (run.actualPhases||[]).forEach((p,j)=>{
-        const duration=Math.round(Math.min(end,run.actualPhases[j+1]?.start??run.moving))-Math.round(Math.max(start,p.start));
-        if(duration>0)pieces.push('<li>'+esc(p.name)+' · '+durationWords(duration)+'</li>');
+        const left=Math.max(start,p.start),right=Math.min(end,run.actualPhases[j+1]?.start??run.moving);
+        if(right<=left)return;
+        const begin=distanceAt(left),finish=distanceAt(right);
+        const pace=begin!==null&&finish>begin?fmtPace((right-left)/(finish-begin))+'/km':'—';
+        pieces.push([j+1,p.name,fmtTime(right-left),pace]);
       });
     }
     const pauses=Array.isArray(run.pauses)?run.pauses.filter(p=>p.km>=from&&(p.km<to||(i===splits.length-1&&p.km<=to+.001))):null;
     const pauseText=pauses?(pauses.length?pauses.length+' · '+durationWords(pauses.reduce((n,p)=>n+p.seconds,0)):'Nessuna pausa registrata'):'Durata delle pause non disponibile per questo tratto.';
-    return '<strong>Intertempo '+splitLabel(i)+'</strong><p>'+ (steps[i]===null?'Tempo non disponibile':'Tempo '+fmtTime(splits[i].seconds)+' · Passo '+fmtPace(steps[i])+' min/km')+'</p><p>Pause · '+pauseText+'</p>'+(pieces.length?'<b>Blocchi nel tratto · '+pieces.length+'</b><ol>'+pieces.join('')+'</ol>':'<p>Dettaglio dei blocchi non disponibile per questo tratto.</p>');
+    return '<strong>Intertempo '+splitLabel(i)+'</strong><p>'+ (steps[i]===null?'Tempo non disponibile':'Tempo '+fmtTime(splits[i].seconds)+' · Passo '+fmtPace(steps[i])+' min/km')+'</p><p>Pause · '+pauseText+'</p>'+(pieces.length?'<b>Blocchi nel tratto · '+pieces.length+'</b>'+phaseTable(['N°','Tipo','Durata','Passo medio'],pieces)+'<small>Passo stimato dai punti GPS nel tratto. — indica dati insufficienti.</small>':'<p>Dettaglio dei blocchi non disponibile per questo tratto.</p>');
   }
   function graph() {
     if (!measured.length) return '<p class="muted">Inserisci gli intertempi per vedere il grafico del passo.</p>';
@@ -899,7 +917,7 @@ function openRun(id) {
     if(steps[i]===null)return first+'<td>—</td><td></td><td>'+elev+'</td></tr>';
     return first+'<td>'+fmtPace(steps[i])+'</td><td><i style="width:'+Math.max(3,95*(fastest/steps[i])**3)+'%"></i></td><td>'+elev+'</td></tr>';
   }).join('');
-  app.innerHTML = '<style>.rd{max-width:1100px;margin:auto}.rd>*+*{margin-top:18px}.rd h1{font-size:clamp(2.5rem,7vw,5.5rem);line-height:.98;letter-spacing:-.06em;margin:.25em 0;overflow-wrap:anywhere}.rd h2{margin:0 0 15px;letter-spacing:-.035em}.rd .panel{padding:clamp(17px,3vw,30px)}.rd-intro p{white-space:pre-wrap;overflow-wrap:anywhere}.rd-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:1px;background:#cfd3c9;border:1px solid #cfd3c9;border-radius:18px;overflow:hidden}.rd-metric{padding:17px;background:#fffef9;display:grid;align-content:space-between;gap:12px}.rd-metric span{font-size:.8rem;color:#50594d}.rd-metric strong{font-size:clamp(1.25rem,3vw,2rem);line-height:1.1;letter-spacing:-.05em}.rd-metric small{font-size:.68rem;letter-spacing:0}.rd-map{width:100%;height:clamp(230px,42vw,410px);border-radius:14px;overflow:hidden}.rd-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}.rd-cols>*{min-width:0}.rd-chart{width:100%;height:auto;font:13px system-ui;fill:#4a554b}.rd table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;font-size:.87rem}.rd td,.rd th{padding:7px 3px;text-align:left;border-bottom:1px solid #dfe2d9}.rd td:last-child,.rd th:last-child{text-align:right}.rd td:nth-child(3){width:30%}.rd td i{display:block;background:#498bd1;height:13px;border-radius:3px}.rd-buttons{display:flex;flex-wrap:wrap;gap:10px}.rd li{margin:.45em 0}.rd summary{cursor:pointer}.rd p{line-height:1.5}@media(max-width:720px){.rd-cols{grid-template-columns:1fr}.rd-metrics{grid-template-columns:1fr 1fr}}.splitPick{background:#246bb4;color:white;border:0;border-radius:7px;width:8ch;height:44px;padding:2px;font-weight:bold;white-space:nowrap}.rd tr[data-split]{cursor:pointer}.rd tr.activeSplit{background:#e4ebdc}.rd #rd-split-info:not(:empty){margin-top:12px;padding:12px;background:#f4f7ee;border-radius:10px}</style>'+
+  app.innerHTML = '<style>.rd{max-width:1100px;margin:auto}.rd>*+*{margin-top:18px}.rd h1{font-size:clamp(2.5rem,7vw,5.5rem);line-height:.98;letter-spacing:-.06em;margin:.25em 0;overflow-wrap:anywhere}.rd h2{margin:0 0 15px;letter-spacing:-.035em}.rd .panel{padding:clamp(17px,3vw,30px)}.rd-intro p{white-space:pre-wrap;overflow-wrap:anywhere}.rd-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:1px;background:#cfd3c9;border:1px solid #cfd3c9;border-radius:18px;overflow:hidden}.rd-metric{padding:17px;background:#fffef9;display:grid;align-content:space-between;gap:12px}.rd-metric span{font-size:.8rem;color:#50594d}.rd-metric strong{font-size:clamp(1.25rem,3vw,2rem);line-height:1.1;letter-spacing:-.05em}.rd-metric small{font-size:.68rem;letter-spacing:0}.rd-map{width:100%;height:clamp(230px,42vw,410px);border-radius:14px;overflow:hidden}.rd-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}.rd-cols>*{min-width:0}.rd-chart{width:100%;height:auto;font:13px system-ui;fill:#4a554b}.rd table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;font-size:.87rem}.rd td,.rd th{padding:7px 3px;text-align:left;border-bottom:1px solid #dfe2d9}.rd td:last-child,.rd th:last-child{text-align:right}.rd td:nth-child(3){width:30%}.rd td i{display:block;background:#498bd1;height:13px;border-radius:3px}.rd-buttons{display:flex;flex-wrap:wrap;gap:10px}.rd li{margin:.45em 0}.rd summary{cursor:pointer}.rd p{line-height:1.5}@media(max-width:720px){.rd-cols{grid-template-columns:1fr}.rd-metrics{grid-template-columns:1fr 1fr}}.splitPick{background:#246bb4;color:white;border:0;border-radius:7px;width:8ch;height:44px;padding:2px;font-weight:bold;white-space:nowrap}.rd tr[data-split]{cursor:pointer}.rd tr.activeSplit{background:#e4ebdc}.rd #rd-split-info:not(:empty){margin-top:12px;padding:12px;background:#f4f7ee;border-radius:10px}.phaseTable{border-collapse:collapse;width:100%;font:normal .86rem/1.35 system-ui;font-variant-numeric:tabular-nums}.phaseTable th,.phaseTable td{padding:8px 4px;text-align:left;border-bottom:1px solid #dfe2d9}.phaseTable th{color:#52604d}.phaseTable td:nth-child(2){overflow-wrap:anywhere}.rd .phaseTable td:nth-child(3){width:auto}.phaseTable td:last-child,.phaseTable th:last-child{text-align:right}</style>'+
     '<article class="rd"><button class="btn" id="rd-back">← Attività e statistiche</button><header class="rd-intro"><div class="eyebrow">Scheda attività · '+date+'</div><h1>'+esc(run.title)+'</h1>'+(run.caption?'<p>'+esc(run.caption)+'</p>':'')+'</header><div class="rd-buttons"><button class="btn primary" id="rd-edit">Modifica corsa</button><button class="btn" id="rd-remove">Elimina corsa</button></div>'+
     '<section class="rd-metrics">'+metric('Distanza',num(run.km),'km')+metric('Tempo in movimento',fmtTime(run.moving))+metric('Passo medio',fmtPace(run.moving/run.km),'/km')+metric('Calorie stimate',calories??'—',calories!==null?'kcal':'')+'</section>'+
     '<section class="panel"><h2>Percorso</h2>'+((run.points||[]).length?'<div id="rd-map" class="rd-map"></div>':'<p class="muted">Questa attività non ha ancora un percorso. Puoi disegnarlo da «Modifica corsa».</p>')+'</section>'+
@@ -908,7 +926,10 @@ function openRun(id) {
     (blocks.length?'<section class="panel"><h2>Struttura allenamento</h2><ol>'+routineGroups(blocks).map(g=>'<li><strong>'+g[0].reps+' ×</strong> ('+g.map(b=>esc(labels[b.type])+' '+num(b.value)+' '+esc(b.unit)).join(' → ')+')</li>').join('')+'</ol></section>':'')+
     ((run.bests||[]).length?'<section class="panel"><h2>Prestazioni cronometrate</h2><ul>'+run.bests.map(b=>'<li>'+num(b.km*1000)+' m · '+fmtTime(b.seconds)+'</li>').join('')+'</ul></section>':'')+
 
-    (run.actualPhases?.length?'<section class="panel"><h2>Blocchi effettivi GPS</h2><ol>'+run.actualPhases.map((p,i)=>'<li>'+esc(p.name)+' · '+fmtTime(p.start)+' – '+fmtTime(run.actualPhases[i+1]?.start??run.moving)+' · '+durationWords((run.actualPhases[i+1]?.start??run.moving)-p.start)+'</li>').join('')+'</ol></section>':run.livePlan?.length?'<section class="panel"><h2>Intervalli GPS</h2><ol>'+(()=>{let t=0,i=0,rows=[];while(t<run.moving&&i<10000){const p=run.livePlan[i++%run.livePlan.length];if(!(p.seconds>0))break;const end=Math.min(run.moving,t+p.seconds);rows.push('<li>'+esc(p.name)+' · '+fmtTime(t)+' – '+fmtTime(end)+' · '+durationWords(end-t)+'</li>');t=end}return rows.join('')})()+'</ol></section>':'')+
+    (run.actualPhases?.length?'<section class="panel"><h2>Blocchi effettivi GPS</h2>'+phaseTable(['N°','Tipo di blocco','Tempo','Durata'],run.actualPhases.map((p,i)=>{
+      const end=run.actualPhases[i+1]?.start??run.moving;
+      return [i+1,p.name,fmtTime(p.start)+' – '+fmtTime(end),fmtTime(end-p.start)];
+    }))+'</section>':run.livePlan?.length?'<section class="panel"><h2>Intervalli GPS</h2><ol>'+(()=>{let t=0,i=0,rows=[];while(t<run.moving&&i<10000){const p=run.livePlan[i++%run.livePlan.length];if(!(p.seconds>0))break;const end=Math.min(run.moving,t+p.seconds);rows.push('<li>'+esc(p.name)+' · '+fmtTime(t)+' – '+fmtTime(end)+' · '+durationWords(end-t)+'</li>');t=end}return rows.join('')})()+'</ol></section>':'')+
     activityMedals(run)+
     '<details class="panel"><summary>Come sono calcolate le statistiche?</summary><p>Il passo medio usa il tempo in movimento. Il passo complessivo include anche le pause. L’intertempo più veloce è il tratto registrato con il minor tempo per chilometro, anche quando misura meno di 1 km.</p><p>La stima in piano usa 1 kcal per kg per km di corsa e 0,5 per km di camminata. Per le fasi di camminata espresse in minuti ipotizziamo 5 km/h. La distanza rimanente conta come corsa. Pendenze e velocità effettiva possono cambiare il risultato.'+(weight>0?' Peso usato: '+num(weight)+' kg.':' Aggiungi il peso per ottenere la stima.')+' <a href="https://doi.org/10.1152/jappl.1963.18.2.367" target="_blank" rel="noopener">Margaria et al., 1963</a>.</p></details>'+
     '</article>';
@@ -982,34 +1003,247 @@ const logStats = (() => {
       el.querySelector('.chartReadout').textContent=r.title+' · '+dayLabel(r.date)+' · '+r.km.toLocaleString('it-IT')+' km · '+fmtTime(r.moving)+' · '+fmtPace(r.moving/r.km)+' min/km';
     });
   }
-  function coaching(list){
-    if(!list.length)return '<h3>Il tuo punto di partenza</h3><p>Registra una prima uscita e indica la fatica percepita per ricevere una proposta per la successiva.</p>';
-    const r=list[0],pace=x=>x.moving/x.km;
-    const pattern=x=>(x.blocks||[]).map(b=>[b.type,b.unit,b.value,b.reps,b.group??0].join('/')).join('|');
-    const comparable=list.filter(x=>Math.abs(x.km/r.km-1)<=.2 && pattern(x)===pattern(r)).slice(0,4);
-    const ready=r.effort==='easy'&&comparable.length>=2&&comparable[1].effort==='easy'&&pace(r)<=pace(comparable[1])*1.02;
-    const walk=r.blocks?.find(b=>b.type==='walk'&&b.unit==='min'),run=r.blocks?.find(b=>b.type==='run'&&b.unit==='min');
-    let tip;
-    if(walk && run && routineGroups(r.blocks).length===1 && r.blocks.length===2){
-      if(ready && run.value>=8)tip=`Prova ${fmt(Math.min(r.km,2))} km di corsa continua a ritmo comodo. Riprendi la camminata se ne senti il bisogno.`;
-      else tip=`Alterna ${fmt(run.value+(ready?1:0))} min di corsa e ${fmt(walk.value)} min di cammino per circa ${fmt(r.km)} km.`;
-    }else if(r.blocks?.length){tip='Ripeti la struttura dell’ultima seduta, mantenendo recuperi e numero di ripetizioni.'}
-    else tip=`Prova ${fmt(ready?Math.round(r.km*1.05*100)/100:r.km)} km a ritmo comodo.`;
-    if(r.effort==='hard')tip='L’ultima uscita ti è sembrata impegnativa. Quando ti senti recuperato, prova una seduta più breve a ritmo comodo.';
-    const projection=comparable.length<3?'Servono almeno tre uscite con lo stesso schema e distanza entro il 20% dell’ultima per stimare una tendenza.':(()=>{
-      const ps=comparable.map(pace), changes=ps.slice(0,-1).map((v,i)=>v-ps[i+1]).sort((a,b)=>a-b), mid=Math.floor(changes.length/2),trend=changes.length%2?changes[mid]:(changes[mid-1]+changes[mid])/2;
-      const next=ps[0]+Math.max(-ps[0]*.05,Math.min(ps[0]*.05,trend));
-      return `Su ${fmt(r.km)} km, la prossima uscita è stimata a <strong>${fmtTime(next*r.km)}</strong> (${fmtPace(next)} /km). La stima applica la variazione mediana del passo nelle ultime ${ps.length} uscite simili, limitata al 5% per seduta. Terreno e fatica possono cambiare il risultato.`;
-    })();
-    return `<span class="lsbadge">${ready?'Progressione leggera':'Consolidamento'}</span><p><strong>${tip}</strong></p><p class="lsnote">Proposta basata sull’ultima seduta e sulla fatica registrata. Per una progressione servono due uscite simili, facili e con passo stabile o in miglioramento.</p><div class="projection"><h3>Previsione della prestazione</h3><p class="lsnote">${projection}</p></div>`;
+  function median(values){
+    const v=[...values].sort((a,b)=>a-b),mid=Math.floor(v.length/2);
+    return v.length?(v[mid]+v[Math.floor((v.length-1)/2)])/2:0;
+  }
+  function sessionProfile(r){
+    const phases=r.actualPhases?.length?r.actualPhases.map((p,i)=>{
+      const name=p.name.toLowerCase();
+      const type=/cammin|recuper|pausa|riposo/.test(name)?'walk':/sprint|scatt|allungo/.test(name)?'fast':/corsa libera/.test(name)?'unknown':/cors|run/.test(name)?'run':'unknown';
+      return {type,sec:(r.actualPhases[i+1]?.start??r.moving)-p.start};
+    }):(r.blocks||[]).map(b=>({type:b.type==='rest'?'walk':b.type,sec:b.unit==='min'?b.value*60:0}));
+    const times=type=>phases.filter(p=>p.type===type&&p.sec>0).map(p=>p.sec);
+    return {r,run:median(times('run')),walk:median(times('walk')),longest:Math.max(0,...times('run')),mixed:phases.some(p=>p.type==='walk'),fast:phases.some(p=>p.type==='fast')};
+  }
+  function coaching(list,feeling='normal',objective='endurance',mode='auto',budget=0,terrain='usual'){
+    const today=dayKey(new Date());
+    list=list.filter(r=>r.date<=today&&r.km>0&&r.moving>0);
+    if(feeling==='stop')return '<h3>Oggi scegli il riposo</h3><p>Hai indicato di non sentirti pronto per correre. Rivaluta la proposta quando ti sentirai recuperato.</p>';
+    if(!list.length)return '<h3>Il tuo punto di partenza</h3><p>Registra una prima uscita e indica quanto ti è sembrata faticosa.</p>';
+    const last=list[0],age=r=>Math.round((localDate(dayKey(new Date()))-localDate(r.date))/86400000);
+    const recent=list.filter(r=>age(r)>=0&&age(r)<=42).slice(0,6);
+    const history=(recent.length?recent:[last]).map(sessionProfile),latest=history[0].r;
+    const baseline=Math.min(latest.km,median(history.map(p=>p.r.km)));
+    const hard=history.slice(0,3).filter(p=>p.r.effort==='hard').length;
+    const easy=history.filter(p=>p.r.effort==='easy').length;
+    const gap=age(latest)>10,loaded=history.length>1&&latest.km>1.3*median(history.slice(1).map(p=>p.r.km));
+    const week=(offset)=>list.filter(r=>age(r)>=offset&&age(r)<offset+7).reduce((sum,r)=>sum+r.moving/60,0);
+    const pastWeeks=[7,14,21].map(week);
+    const rising=pastWeeks.filter(n=>n>0).length>=2&&week(0)>1.25*median(pastWeeks);
+    const lastProfile=history[0];
+    const stopTime=latest.pauses?.reduce((n,p)=>n+p.seconds,0)||0;
+    const interrupted=stopTime>latest.moving*.12;
+    const uphill=(latest.splits||[]).reduce((n,p)=>n+Math.max(0,p.elev||0),0)/latest.km>20;
+    const similar=history.slice(1).filter(p=>p.mixed===lastProfile.mixed&&p.fast===lastProfile.fast&&Math.abs(p.r.km/latest.km-1)<.25);
+    const slower=similar.length>=2&&!uphill&&latest.moving/latest.km>1.1*median(similar.map(p=>p.r.moving/p.r.km));
+    const quality=lastProfile.fast||uphill;
+    const hold=rising||interrupted||quality||slower||objective==='steady';
+    const easier=feeling==='tired'||gap||latest.effort==='hard'||hard>=2;
+    const ready=!hold&&!easier&&!loaded&&latest.effort==='easy'&&easy>=2&&hard===0;
+    const mixed=history.filter(p=>p.mixed&&p.run&&p.walk);
+    const useIntervals=history[0].mixed||(!history[0].run&&mixed.length>=history.length/2);
+    const reference=mixed.slice(0,3);
+    const baseRun=reference.length?median(reference.map(p=>p.run)):120;
+    const baseWalk=reference.length?median(reference.map(p=>p.walk)):60;
+    const continuous=ready&&useIntervals&&reference.length>=2&&reference.filter(p=>p.longest>=480&&p.walk<=p.run/3&&p.r.effort!=='hard').length>=2;
+    let goal=baseline*(age(latest)>28 ? .55 : easier ? .8 : 1),title,session,follow;
+    const reason=feeling==='tired'?'Oggi segnali gambe stanche.':gap?'È passato un po’ di tempo dall’ultima uscita.':latest.effort==='hard'?'Hai segnato l’ultima uscita come impegnativa.':hard>=2?'Due delle ultime uscite sono state impegnative.':rising?'Negli ultimi sette giorni hai accumulato '+fmt(week(0),0)+' minuti, sopra il tuo volume settimanale recente.':interrupted?'L’ultima uscita include pause rilevanti. Il diario non ne indica la causa: prima di aumentare, verifica come va una seduta regolare.':quality?'L’ultima uscita includeva tratti veloci o salite: per la prossima privilegia un ritmo facile.':slower?'Il passo è stato più lento delle uscite recenti di distanza simile. Verifica le sensazioni prima di aumentare.':objective==='steady'?'Hai scelto di consolidare il ritmo attuale.':loaded?'L’ultima distanza è già aumentata rispetto alle precedenti.':ready?'Hai registrato almeno due uscite facili e nessuna delle ultime tre è stata impegnativa.':'Conviene verificare come rispondi a un altro allenamento a carico simile.';
+    if(age(latest)>28){
+      title='Ripartenza dopo una pausa';
+      session='Inizia con 1:00 di corsa comoda e 1:00 di camminata. Usa '+fmt(Math.min(goal,3),2)+' km come limite indicativo.';
+      goal=Math.min(goal,3);
+      follow='Registra come è andata questa prima uscita: dopo una pausa lunga il vecchio passo è un riferimento debole.';
+    }else if(lastProfile.fast&&!lastProfile.run&&!lastProfile.walk){
+      title='Uscita facile dopo le ripetute';
+      session='Prevedi circa '+fmt(goal,2)+' km facili, con camminata libera se serve.';
+      follow='Registra separatamente i recuperi per confrontare le prossime ripetute.';
+    }else if(continuous){
+      const seconds=Math.min(...reference.filter(p=>p.longest>=480).map(p=>p.longest));
+      goal=Math.min(baseline*.7,seconds/median(history.map(p=>p.r.moving/p.r.km)));
+      title='Prova di corsa continua';
+      session='Prova '+fmt(goal,2)+' km di corsa facile senza camminata. Se serve, riprendi il tuo recupero abituale.';
+      follow='Se la prova risulta facile, ripeti la distanza prima di allungarla.';
+    }else if(useIntervals){
+      let run=baseRun,walk=baseWalk;
+      if(easier){run*=.75;walk+=15}
+      else if(ready&&baseWalk>=90){walk-=15;if(baseRun<180)run+=15}
+      else if(ready){run+=30;if(baseRun>=240&&baseWalk<=45)walk+=15}
+      else if(loaded&&baseRun>=90&&baseWalk>=60){run*=.8;walk*=.85}
+      const round=t=>Math.max(15,Math.round(t/5)*5);
+      title=easier?'Recupero con camminata':ready?'Progressione a intervalli':'Consolida gli intervalli';
+      session='Alterna '+fmtTime(round(run))+' di corsa facile e '+fmtTime(round(walk))+' di camminata fino a circa '+fmt(goal,2)+' km.';
+      follow=ready?'Se finisci con margine, ripeti questa sequenza una volta. Se è dura, torna alle durate precedenti.':'Prova questo schema per una o due uscite. Dopo ogni corsa registra la fatica per aggiornare la proposta.';
+    }else{
+      const strides=objective==='speed'&&ready&&history.length>=4&&easy>=3&&history[0].run>=600&&!history.slice(0,2).some(p=>p.fast);
+      title=easier?'Uscita di recupero':strides?'Prova un allungo':ready?'Aumenta la distanza':'Consolida la distanza';
+      if(ready&&!strides)goal+=Math.min(.4,baseline*.05);
+      session='Percorri circa '+fmt(goal,2)+' km a ritmo comodo, camminando quando serve.';
+      if(strides)session+=' Nella seconda metà puoi inserire un solo allungo controllato di 15 secondi, poi recuperare camminando.';
+      follow=strides?'Alla prossima uscita torna al ritmo facile e valuta come ti è sembrato l’allungo.':'Se la distanza è comoda, ripetila prima di aumentarla. Se è impegnativa, accorcia la prossima uscita.';
+    }
+    const span=(sec)=>fmtTime(Math.round(sec));
+    const pair=(run,walk)=>span(run)+' di corsa e '+span(walk)+' di cammino';
+    const km=()=>fmt(goal,2)+' km';
+    const structured=lastProfile.run>0&&lastProfile.walk>0;
+    const easyMixed=reference.filter(p=>p.r.effort==='easy');
+    // Apply one targeted variation to the underlying plan, in priority order.
+    if(age(latest)<=28&&!gap){
+      if(easier){
+        if(structured&&feeling==='tired'){
+          title='Accorcia solo le frazioni di corsa';session='Alterna '+pair(baseRun*.75,baseWalk)+' per circa '+km()+'.';
+        }else if(structured&&latest.effort==='hard'){
+          title='Recupero più lungo a parità di frazione';session='Alterna '+pair(baseRun,baseWalk+30)+' a ritmo tranquillo per circa '+km()+'.';
+        }else if(hard>=2&&!structured){
+          title='Recupero a tempo';session='Parti camminando e alterna corsa leggera e cammino a sensazione per circa '+Math.max(1,Math.round(goal*latest.moving/latest.km/60))+' minuti.';
+        }
+      }else if(interrupted){
+        title='Uscita di verifica senza interruzioni programmate';session='Scegli un percorso con pochi attraversamenti. Ripeti circa '+km()+' con le tue abituali fasi di corsa e cammino e registra separatamente le soste.';
+      }else if(uphill){
+        title='Recupero in piano';session='Scegli un tratto pianeggiante e percorri '+km()+' a sforzo facile, camminando quando serve.';
+      }else if(rising){
+        title='Riduci il volume settimanale';goal*=.85;session='Accorcia il giro a circa '+km()+' e mantieni facili tutte le frazioni.';
+      }else if(slower&&!quality){
+        title='Partenza più lenta';session='Per '+km()+' mantieni lo schema abituale. Corri il primo terzo più piano e cerca una sensazione uniforme nel resto del giro.';
+      }else if(loaded&&!quality){
+        title='Ritorna alla distanza abituale';session='Torna a circa '+km()+' sul percorso consueto, conservando i recuperi dell’ultima uscita.';
+      }else if(!quality&&objective==='steady'&&structured){
+        title='Ripeti schema e ritmo';goal=latest.km;session='Ripeti la sequenza dell’ultima seduta per '+km()+', con lo stesso passo complessivo indicativo di '+fmtTime(latest.moving/latest.km)+'/km su terreno simile.';
+        follow='Se termini con margine, scegli Più autonomia per valutare il prossimo aumento.';
+      }else if(ready&&continuous&&easyMixed.length>=3&&baseline>=5&&easyMixed.every(p=>p.longest/(p.r.moving/p.r.km)>=3.8)){
+        title='Prova dei 4 km continui';goal=4;session='Prova 4 km di corsa facile. Riprendi la camminata se il ritmo diventa impegnativo.';follow='Prima di allungare, verifica se riesci a ripetere i 4 km con la stessa facilità.';
+      }else if(ready&&structured&&!continuous){
+        if(objective==='speed'){
+          title='Una frazione più brillante';session='Alterna '+pair(baseRun,baseWalk)+' per '+km()+'. A metà giro rendi più brillanti soltanto gli ultimi 10 secondi di una frazione.';
+        }else if(baseWalk>=120){
+          title='Riduci un solo recupero';session='Alterna '+pair(baseRun,baseWalk)+'. A metà giro accorcia una sola camminata a '+span(baseWalk-30)+'. Totale '+km()+'.';
+        }else if(baseRun>=300){
+          title='Posticipa una camminata';session='Segui '+pair(baseRun,baseWalk)+' per '+km()+'. Una volta sola, prolunga la corsa di '+span(Math.min(60,baseRun*.15))+' prima del recupero.';
+        }else if(baseWalk>=90){
+          title='Accorcia tutte le camminate';session='Mantieni la corsa e prova '+pair(baseRun,baseWalk-15)+' fino a '+km()+'.';
+        }else if(baseRun>=180){
+          title='Allunga corsa e recupero';session='Alterna '+pair(baseRun+30,baseWalk+15)+' per '+km()+'. Il recupero più lungo accompagna la frazione più lunga.';
+        }else if(baseRun>=120){
+          title='Prova una sola frazione più lunga';session='Segui '+pair(baseRun,baseWalk)+' per '+km()+'. A metà allenamento aggiungi 30 secondi a un solo blocco di corsa.';
+        }else if(baseWalk>=60){
+          title='Una progressione ogni due giri';session='Alterna '+pair(baseRun,baseWalk)+' per '+km()+'. Ogni seconda frazione di corsa dura '+span(baseRun+15)+'.';
+        }
+      }else if(ready&&!useIntervals&&objective==='endurance'&&history.length>=3){
+        if(baseline>=6){
+          title='Prolunga il tratto centrale';goal=baseline+Math.min(.4,baseline*.04);session='Percorri '+km()+' inserendo la distanza aggiuntiva a metà giro e chiudendo al ritmo facile abituale.';
+        }else if(baseline>=4){
+          title='Finale regolare';goal=baseline;session='Corri '+km()+' con un primo chilometro facile. Cerca di mantenere il passo della parte centrale anche nell’ultimo chilometro.';
+        }else{
+          title='Un minuto in più di autonomia';goal=baseline+Math.min(60/(latest.moving/latest.km),baseline*.05);session='Aggiungi fino a un minuto di corsa facile al giro abituale, per circa '+km()+'.';
+        }
+      }
+    }
+    // Compare complete, level kilometre splits only when both ends are recorded.
+    const full=(latest.splits||[]).filter(s=>s.km===1);
+    const usable=full.length>=3&&full.length===Math.floor(latest.km)&&full.every(s=>s.seconds>0&&Math.abs(s.elev||0)<=15);
+    if(usable&&!easier&&!loaded&&!rising&&!interrupted&&!quality&&!slower&&recent.length>=2){
+      const values=full.map(s=>s.seconds), middle=median(values);
+      const endChange=(values.at(-1)-values[0])/middle;
+      const spread=(Math.max(...values)-Math.min(...values))/middle;
+      const pattern=endChange>.08?0:endChange<-.08?1:spread>.12?2:3;
+      const profiles=[
+        ['Intervalli da consolidare','Alterna '+pair(baseRun,baseWalk)+' come di consueto.'],
+        ['Intervalli con più autonomia','Mantieni '+pair(baseRun,baseWalk)+' nella prima metà. Se sei comodo, prolunga una sola corsa di 15 secondi nella seconda metà.'],
+        ['Continua di consolidamento','Ripeti la distanza abituale a ritmo comodo.'],
+        ['Continua per la resistenza','Corri a sensazione su terreno simile. Controlla il tempo al passaggio di metà percorso.'],
+        ['Tecnica del ritmo','Sul giro abituale dedica due tratti di 20 secondi a passi sciolti e regolari, separati da almeno un minuto facile.']
+      ];
+      const index=structured?(ready&&objective==='endurance'?1:0):objective==='steady'?2:ready&&objective==='speed'?4:3;
+      const cues=[
+        ['partenza trattenuta','Affronta il primo km più lentamente rispetto all’ultima volta, poi cerca di chiudere senza rallentare.'],
+        ['finale controllato','Riparti con la stessa calma. Questa volta distribuisci l’accelerazione finale sugli ultimi due km.'],
+        ['ritmo uniforme','Usa il passo mediano dei km completi come riferimento indicativo e cerca di ridurre gli sbalzi fra un km e il successivo.'],
+        ['ritmo a sensazione','Copri il primo tratto guardando il passo. Per il km successivo nascondi il dato, poi confronta i due passaggi.']
+      ];
+      // Preserve milestones, recovery and distance-based sessions with unknown phase duration.
+      if(!continuous&&(!useIntervals||structured)){
+        goal=baseline;
+        title=profiles[index][0]+' · '+cues[pattern][0];
+        session='Obiettivo indicativo '+km()+'. '+profiles[index][1]+' '+cues[pattern][1];
+        if(pattern===2)session+=' Passo mediano: '+span(middle)+'/km.';
+        follow='Nei '+full.length+' km completi registrati sei passato da '+span(values[0])+'/km a '+span(values.at(-1))+'/km, con '+span(Math.max(...values)-Math.min(...values))+' tra il più rapido e il più lento. Confronta i passaggi su un percorso simile e annota la fatica.';
+      }
+    }
+    const markers=latest.actualPhases||[];
+    const walks=markers.flatMap((p,i)=>/cammin|recuper/i.test(p.name)?[(markers[i+1]?.start??latest.moving)-p.start]:[]).filter(s=>s>0);
+    const typicalWalk=median(walks);
+    const extended=walks.length>=3&&Math.max(...walks)>=Math.max(typicalWalk*1.5,typicalWalk+25);
+    const irregular=history.length>=3&&history.slice(1).some((p,i)=>age(p.r)-age(history[i].r)>12);
+    const missing=history.every(p=>!p.r.effort||p.r.effort==='unknown');
+    let adaptation='';
+    if(!gap&&!easier&&!rising&&!interrupted&&!quality){
+      if(extended){
+        adaptation='Nell’ultima uscita una camminata è durata '+span(Math.max(...walks))+', contro '+span(typicalWalk)+' abituali.';
+        title='Prevedi un recupero flessibile';session='Ripeti circa '+fmt(baseline,2)+' km. Mantieni i blocchi abituali e concediti un recupero più lungo quando serve.';
+      }else if(irregular){
+        adaptation='Tra le uscite recenti c’è stata almeno una pausa di oltre dodici giorni.';
+        title='Ritrova continuità';session='Ripeti un giro familiare di circa '+fmt(baseline,2)+' km a ritmo facile, con i recuperi abituali.';
+      }else if(missing){
+        adaptation='Nelle uscite considerate manca il giudizio sulla fatica.';
+        title='Calibra lo sforzo';session='Ripeti circa '+fmt(baseline,2)+' km a un ritmo che senti facile e registra la fatica all’arrivo.';
+      }
+      if(adaptation){goal=baseline;follow='Dopo la seduta annota se avresti potuto proseguire e se hai allungato qualche recupero.'}
+    }
+    if(terrain==='hills'){
+      adaptation+=(adaptation?' ':'')+'Hai scelto un giro collinare.';
+      title='Collinare facile · '+(easier?'recupero':'gestione delle salite');
+      goal=Math.min(goal,baseline)*.85;
+      session='Scegli un giro di circa '+km()+'. Accorcia il passo in salita, cammina quando serve e riprendi la corsa facile sul piano.';
+      follow='Annota se le camminate coincidevano con le salite prima di confrontare il passo con un giro pianeggiante.';
+    }
+    const pace=median(history.map(p=>p.r.moving/p.r.km));
+    // A rehearsal has its own finish line. The full session is a reference for a later day.
+    const rehearsal=mode==='short'||(mode==='auto'&&(feeling==='tired'||interrupted||hard>=2));
+    if(rehearsal){
+      const fullTitle=title,fullSession=session;
+      goal=Math.min(goal*.7,1200/pace);
+      const minutes=Math.max(1,Math.round(goal*pace/60));
+      const check=span(Math.max(1,Math.round(goal*pace/2)));
+      title='Prova breve · '+fullTitle;
+      let rehearsalCue;
+      if(easier||gap||hold&&quality||terrain==='hills'||adaptation){
+        rehearsalCue='Inizia camminando e passa alla corsa solo se il movimento ti sembra comodo. Oggi tieni tutto facile.';
+      }else if(continuous){
+        rehearsalCue='Prova la distanza ridotta in un unico tratto facile. Se devi camminare, annota a che distanza hai iniziato il recupero.';
+      }else if(structured){
+        rehearsalCue='Inizia con il tuo schema abituale di '+pair(baseRun,baseWalk)+'. Nella seconda metà prova al massimo una volta la variazione indicata nello schema di riferimento, se entra nel tempo disponibile.';
+      }else if(lastProfile.fast||objective==='speed'){
+        rehearsalCue='Corri facile nella prima metà. Nella seconda prova al massimo un tratto brillante di 10 secondi soltanto se ti senti recuperato e la seduta di riferimento prevede velocità.';
+      }else{
+        rehearsalCue='Inizia a ritmo comodo. Nella seconda metà prova sul giro corto la distribuzione del passo suggerita per la seduta completa.';
+      }
+      session='Per oggi punta a circa '+km()+' ('+minutes+' min). '+rehearsalCue+' A '+check+' verifica il respiro: se parlare è già difficile, rallenta o cammina fino al rientro.';
+      follow='Schema completo di riferimento per un’altra uscita: '+fullSession+' Dopo la prova breve registra come ti sentivi a metà e all’arrivo.';
+    }
+    if(budget>0&&goal*pace>budget*60){
+      goal=budget*60/pace;
+      const turn=span(budget*30);
+      title='Seduta da '+budget+' min · '+(terrain==='hills'?'collinare facile':structured?'corsa e cammino':'ritmo facile');
+      session='Hai '+budget+' minuti. Su un percorso di andata e ritorno gira entro '+turn+' o prima se il ritorno è in salita. '+
+        (terrain==='hills'?'Affronta le salite a sforzo facile e cammina quando serve.':structured?'Alterna '+pair(baseRun,baseWalk)+' a ritmo comodo, interrompendo l’ultimo blocco allo scadere del tempo.':'Corri a ritmo facile e inserisci camminate libere quando serve.');
+      follow='Oggi usa il tempo come limite. La distanza indicativa è '+km()+'. Annota quanto hai percorso senza accelerare per raggiungerla.';
+    }
+    return '<span class="lsbadge">'+title+'</span><p><strong>'+session+'</strong></p><p class="lsnote">'+(adaptation||reason)+' Riferimento: '+history.length+' uscite, distanza mediana '+fmt(median(history.map(p=>p.r.km)),2)+' km.</p><p>'+follow+'</p><div class="projection"><h3>Tempo indicativo</h3><p>Circa '+fmtTime(goal*pace)+' su '+fmt(goal,2)+' km al passo mediano delle uscite considerate. Cambiando recuperi o terreno il tempo può variare.</p></div>';
+  }
+  function coachControls(list){
+    const options='<label>Come ti senti oggi? <select id="coachFeeling"><option value="normal">Recuperato</option><option value="tired">Gambe stanche</option><option value="stop">Preferisco riposare</option></select></label><label>Obiettivo <select id="coachObjective"><option value="endurance">Più autonomia</option><option value="steady">Consolidare</option><option value="speed">Lavorare sulla velocità</option></select></label><label>Formato della seduta <select id="coachMode"><option value="auto">Scegli in base al diario</option><option value="full">Seduta completa</option><option value="short">Prova breve · fino a 20 min</option></select></label><label>Tempo a disposizione <select id="coachBudget"><option value="0">Nessun limite</option>'+[10,15,20,25,30,40,50,60].map(n=>'<option value="'+n+'">'+n+' minuti</option>').join('')+'</select></label><label>Percorso previsto <select id="coachTerrain"><option value="usual">Percorso abituale</option><option value="hills">Giro collinare</option></select></label>';
+    return '<div style="display:grid;gap:10px;margin:12px 0">'+options+'</div><div id="coachPlan">'+coaching(list)+'</div>';
   }
   function render(){
     const list=ordered(), km=list.reduce((a,r)=>a+r.km,0),total=list.reduce((a,r)=>a+r.moving,0);
     selected=list[0]?.date||dayKey(new Date());month=localDate(selected);
-    document.querySelector('#app').innerHTML=css+`<div class="ls"><div class="lshero"><span class="eyebrow">TRAINING LOG / 02</span><h1>Il tuo diario.</h1><p class="muted">Percorsi, tempi e progressi di ogni uscita.</p></div><div class="lsnums"><div><small>Distanza totale</small><strong>${fmt(km)} <small style="display:inline;font-size:.35em">km</small></strong></div><div><small>Allenamenti</small><strong>${list.length}</strong></div><div><small>In movimento</small><strong>${fmtTime(total)}</strong></div><div><small>Settimane consecutive</small><strong>${streak()}</strong></div></div><div class="lsgrid"><div><section class="panel"><div class="lshead"><div><span class="eyebrow">Archivio</span><h2>Ultime corse</h2></div><button id="lsAll" class="lsbtn">Vedi tutte ↗</button></div>${list.slice(0,3).map(activityRow).join('')||'<p class="empty">Il tuo diario è pronto per la prima corsa.</p>'}</section><section class="panel"><span class="eyebrow">Andamento</span><h2>Carico per uscita</h2><div><button class="lsbtn" data-metric="km">Distanza · km</button> <button class="lsbtn" data-metric="min">Tempo · min</button></div><div id="lsChart"></div><small class="lsmeta">Ultime 10 attività · dalla meno recente</small></section><section class="panel"><div class="lshead"><div><span class="eyebrow">Podio personale</span><h2>Le tue medaglie</h2></div><select id="lsTarget" aria-label="Distanza per il podio">${medalCategories().map(i=>`<option value="${i}" ${i===target?'selected':''}>${medalLabel(i)}</option>`).join('')}</select></div><div id="lsPodium"></div><p class="lsnote">Oro, argento e bronzo vengono assegnati automaticamente ai tre migliori tempi, una prestazione per corsa. Con il GPS usiamo i campioni del percorso. Con i dati manuali usiamo la corsa intera e gli intertempi misurati.</p></section></div><div><section class="panel"><span class="eyebrow">Calendario</span><h2>Giorni di corsa</h2><div id="lsCalendar"></div></section><section class="panel coach"><span class="eyebrow">Prossimo allenamento</span><h2>La prossima uscita</h2>${coaching(list)}</section></div></div></div>`;
+    document.querySelector('#app').innerHTML=css+`<div class="ls"><div class="lshero"><span class="eyebrow">TRAINING LOG / 02</span><h1>Il tuo diario.</h1><p class="muted">Percorsi, tempi e progressi di ogni uscita.</p></div><div class="lsnums"><div><small>Distanza totale</small><strong>${fmt(km)} <small style="display:inline;font-size:.35em">km</small></strong></div><div><small>Allenamenti</small><strong>${list.length}</strong></div><div><small>In movimento</small><strong>${fmtTime(total)}</strong></div><div><small>Settimane consecutive</small><strong>${streak()}</strong></div></div><div class="lsgrid"><div><section class="panel"><div class="lshead"><div><span class="eyebrow">Archivio</span><h2>Ultime corse</h2></div><button id="lsAll" class="lsbtn">Vedi tutte ↗</button></div>${list.slice(0,3).map(activityRow).join('')||'<p class="empty">Il tuo diario è pronto per la prima corsa.</p>'}</section><section class="panel"><span class="eyebrow">Andamento</span><h2>Carico per uscita</h2><div><button class="lsbtn" data-metric="km">Distanza · km</button> <button class="lsbtn" data-metric="min">Tempo · min</button></div><div id="lsChart"></div><small class="lsmeta">Ultime 10 attività · dalla meno recente</small></section><section class="panel"><div class="lshead"><div><span class="eyebrow">Podio personale</span><h2>Le tue medaglie</h2></div><select id="lsTarget" aria-label="Distanza per il podio">${medalCategories().map(i=>`<option value="${i}" ${i===target?'selected':''}>${medalLabel(i)}</option>`).join('')}</select></div><div id="lsPodium"></div><p class="lsnote">Oro, argento e bronzo vengono assegnati automaticamente ai tre migliori tempi, una prestazione per corsa. Con il GPS usiamo i campioni del percorso. Con i dati manuali usiamo la corsa intera e gli intertempi misurati.</p></section></div><div><section class="panel"><span class="eyebrow">Calendario</span><h2>Giorni di corsa</h2><div id="lsCalendar"></div></section><section class="panel coach"><span class="eyebrow">Prossimo allenamento</span><h2>La prossima uscita</h2>${coachControls(list)}</section></div></div></div>`;
     document.querySelector('#lsAll').onclick=()=>openList('Tutte le attività',list);
     document.querySelector('#lsTarget').onchange=e=>{target=Number(e.target.value);medals()};
     document.querySelectorAll('[data-metric]').forEach(b=>b.onclick=()=>{metric=b.dataset.metric;chart()});
+    const feeling=document.querySelector('#coachFeeling'),objective=document.querySelector('#coachObjective');
+    const refresh=()=>{document.querySelector('#coachPlan').innerHTML=coaching(list,feeling.value,objective.value,document.querySelector('#coachMode').value,Number(document.querySelector('#coachBudget').value),document.querySelector('#coachTerrain').value)};
+    document.querySelector('#coachBudget').onchange=document.querySelector('#coachTerrain').onchange=document.querySelector('#coachMode').onchange=feeling.onchange=objective.onchange=refresh;
     calendar();medals();chart();
   }
   return {render};
