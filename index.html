@@ -6,7 +6,7 @@
 #liveDashboard{max-width:900px;margin:auto}
 #liveDashboard .liveHead{margin:0 0 14px}
 #liveDashboard h1{font-size:clamp(30px,5vw,54px);margin:.18em 0}
-#liveDashboard .run-map{height:clamp(210px,36svh,400px)}
+#liveDashboard .run-map{height:clamp(280px,46svh,540px)}
 #liveDashboard .liveMetrics{grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:12px 0}
 #liveDashboard .liveMetrics>div{background:#f6f8f0;padding:10px}
 #liveDashboard .liveMetrics strong,.phaseCard strong{font-variant-numeric:tabular-nums}
@@ -24,7 +24,7 @@
 .phaseShortcuts{display:flex;gap:6px}.phaseShortcuts button{flex:1;min-height:44px;background:#f0f4e9;color:#1a2715;border:1px solid #a4b099;border-radius:10px;font-weight:bold}
 @media(max-width:760px),(max-height:540px){
 #livePanel.raceMode{position:fixed;inset:0;z-index:6;margin:0;border:0;border-radius:0;padding:8px 12px;padding-bottom:max(8px,env(safe-area-inset-bottom));height:100vh;height:100dvh;background:var(--paper);display:grid;grid-template-rows:minmax(0,1fr) auto auto;gap:5px}
-.raceMode #liveDashboard{min-height:0;width:100%;display:grid;grid-template-rows:auto minmax(60px,1fr) auto auto;gap:6px;overflow:auto;overscroll-behavior:contain}
+.raceMode #liveDashboard{min-height:0;width:100%;margin:0 auto;align-self:stretch;display:grid;grid-template-rows:auto minmax(60px,1fr) auto auto;gap:6px;overflow:auto;overscroll-behavior:contain}
 .raceMode #liveDashboard .liveHead{margin:0;display:flex;align-items:center;justify-content:space-between;gap:5px}
 .raceMode #liveDashboard h1{font-size:22px;margin:0}
 .raceMode #liveDashboard .run-map{height:100%;max-height:none;border-radius:12px}
