@@ -1016,7 +1016,7 @@ const logStats = (() => {
     const times=type=>phases.filter(p=>p.type===type&&p.sec>0).map(p=>p.sec);
     return {r,run:median(times('run')),walk:median(times('walk')),longest:Math.max(0,...times('run')),mixed:phases.some(p=>p.type==='walk'),fast:phases.some(p=>p.type==='fast')};
   }
-  function coaching(list,feeling='normal',objective='endurance',mode='auto',budget=0,terrain='usual'){
+  function coaching(list,feeling='normal',objective='endurance',mode='auto',budget=0,terrain='usual',route=0,staged=false){
     const today=dayKey(new Date());
     list=list.filter(r=>r.date<=today&&r.km>0&&r.moving>0);
     if(feeling==='stop')return '<h3>Oggi scegli il riposo</h3><p>Hai indicato di non sentirti pronto per correre. Rivaluta la proposta quando ti sentirai recuperato.</p>';
@@ -1228,7 +1228,44 @@ const logStats = (() => {
         (terrain==='hills'?'Affronta le salite a sforzo facile e cammina quando serve.':structured?'Alterna '+pair(baseRun,baseWalk)+' a ritmo comodo, interrompendo l’ultimo blocco allo scadere del tempo.':'Corri a ritmo facile e inserisci camminate libere quando serve.');
       follow='Oggi usa il tempo come limite. La distanza indicativa è '+km()+'. Annota quanto hai percorso senza accelerare per raggiungerla.';
     }
+    if(staged){
+      title='In due tappe · '+title;
+      const checkpoint=goal*.5;
+      session+=' Dividi la proposta in due tappe da circa '+fmt(checkpoint,2)+' km. Al termine della prima valuta la fatica. ';
+      session+=structured?'Se ti senti comodo riprendi lo schema previsto. Se la fatica aumenta, nella seconda tappa torna alle durate abituali e allunga la camminata quando serve.':'Se sei a tuo agio continua con la seconda tappa. Se la fatica sale, accorciala e rientra a ritmo facile.';
+      follow+=' Annota la differenza di fatica tra le due metà.';
+    }
+    const targetTime=goal*pace;
+    const routeAdvice=[
+      'Scegli un tratto familiare. Controlla come ti senti dopo circa '+span(targetTime/2)+' prima di completare il giro.',
+      'Su andata e ritorno gira intorno a '+span(targetTime/2)+', prima se il ritorno è in salita.',
+      'Su un anello breve controlla il tempo a ogni passaggio dalla partenza. Evita un altro giro se ti porterebbe oltre '+span(targetTime)+'.',
+      'In prima corsia su pista da 400 m il tuo obiettivo equivale a circa '+fmt(goal/.4,1)+' giri. Conta i giri per verificare la distanza.',
+      'Sul tapis roulant usa il timer per i blocchi e la distanza del display. A fine seduta inserisci manualmente i valori nel diario.'
+    ];
+    session+=' '+routeAdvice[route];
     return '<span class="lsbadge">'+title+'</span><p><strong>'+session+'</strong></p><p class="lsnote">'+(adaptation||reason)+' Riferimento: '+history.length+' uscite, distanza mediana '+fmt(median(history.map(p=>p.r.km)),2)+' km.</p><p>'+follow+'</p><div class="projection"><h3>Tempo indicativo</h3><p>Circa '+fmtTime(goal*pace)+' su '+fmt(goal,2)+' km al passo mediano delle uscite considerate. Cambiando recuperi o terreno il tempo può variare.</p></div>';
+  }
+  function coachRoom(list){
+    const room=document.createElement('dialog');
+    room.className='coachRoom';
+    room.innerHTML=`<style>.coachRoom{position:fixed;inset:0;margin:0;width:100%;max-width:100%;height:100%;height:100dvh;max-height:100%;border:0;background:#f5f5ee;color:#18251c;padding:0;overscroll-behavior:contain}.coachRoom article{max-width:800px;margin:auto;padding:24px clamp(16px,5vw,58px) 80px}.coachRoom header{background:#17372a;color:white;padding:28px;border-radius:20px;margin:18px 0}.coachRoom h1{font-size:clamp(32px,7vw,62px);margin:8px 0}.coachRoom label{display:grid;gap:4px}.coachRoom select{min-width:0;width:100%;padding:10px}.coachRoom details,.coachRoom #coachPlan{padding:18px;background:white;border-radius:16px;margin:12px 0}.coachRoom summary{cursor:pointer;font-weight:bold}.coachRoom button{padding:10px 16px}.coachRoom .settingGrid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr))}</style><article><button type="button" id="coachBack">← Diario</button><header><small>RUNLOG / COACH PERSONALE</small><h1>La tua prossima corsa</h1><p>Partiamo dal tuo diario. Come vuoi affrontare l’uscita di oggi?</p></header>${coachControls(list)}<details><summary>Su quali dati si basa il consiglio?</summary><div id="coachEvidence"></div></details><details><summary>E se faccio fatica a metà?</summary><p id="coachFallback"></p></details></article>`;
+    document.body.append(room);
+    const get=id=>room.querySelector('#'+id);
+    const options=get('coachFeeling').parentElement.parentElement;
+    options.className='settingGrid';
+    const routes=['Percorso libero','Andata e ritorno','Anello breve','Pista da 400 m','Tapis roulant'];
+    options.insertAdjacentHTML('beforeend','<label>Dove correrai?<select id="coachRoute">'+routes.map((r,i)=>'<option value="'+i+'">'+r+'</option>').join('')+'</select></label>');
+    options.insertAdjacentHTML('beforeend','<label style="display:flex;align-items:center;gap:8px"><input type="checkbox" style="width:auto" id="coachStaged">Dividi la seduta in due tappe con verifica della fatica</label>');
+    function update(){
+      const feeling=get('coachFeeling').value;
+      const panel=get('coachPlan');
+      panel.innerHTML=coaching(list,feeling,get('coachObjective').value,get('coachMode').value,Number(get('coachBudget').value),get('coachTerrain').value,Number(get('coachRoute').value),get('coachStaged').checked);
+      const valid=list.filter(r=>r.date<=dayKey(new Date())&&r.km>0&&r.moving>0);
+      get('coachEvidence').innerHTML=valid.length?'<p>Ultime attività disponibili. Il coach confronta distanza, tempo e fatica e usa i blocchi effettivi quando li hai registrati.</p>'+valid.slice(0,6).map(r=>'<p>'+dayLabel(r.date)+' · '+fmt(r.km)+' km · '+fmtTime(r.moving)+'</p>').join(''):'<p>Il diario è vuoto. Registra la prima corsa per avere un riferimento personale.</p>';
+      get('coachFallback').textContent=feeling==='stop'?'Oggi hai scelto il riposo.':!valid.length?'Durante la prima uscita annota quando senti il bisogno di camminare.':'Passa alla camminata. Se riparti, puoi accorciare il blocco di corsa dal pannello live. Registra il recupero effettivo e la fatica finale.';
+    }
+    room.onchange=update;get('coachBack').onclick=()=>room.close();room.onclose=()=>room.remove();update();room.showModal();
   }
   function coachControls(list){
     const options='<label>Come ti senti oggi? <select id="coachFeeling"><option value="normal">Recuperato</option><option value="tired">Gambe stanche</option><option value="stop">Preferisco riposare</option></select></label><label>Obiettivo <select id="coachObjective"><option value="endurance">Più autonomia</option><option value="steady">Consolidare</option><option value="speed">Lavorare sulla velocità</option></select></label><label>Formato della seduta <select id="coachMode"><option value="auto">Scegli in base al diario</option><option value="full">Seduta completa</option><option value="short">Prova breve · fino a 20 min</option></select></label><label>Tempo a disposizione <select id="coachBudget"><option value="0">Nessun limite</option>'+[10,15,20,25,30,40,50,60].map(n=>'<option value="'+n+'">'+n+' minuti</option>').join('')+'</select></label><label>Percorso previsto <select id="coachTerrain"><option value="usual">Percorso abituale</option><option value="hills">Giro collinare</option></select></label>';
@@ -1237,13 +1274,11 @@ const logStats = (() => {
   function render(){
     const list=ordered(), km=list.reduce((a,r)=>a+r.km,0),total=list.reduce((a,r)=>a+r.moving,0);
     selected=list[0]?.date||dayKey(new Date());month=localDate(selected);
-    document.querySelector('#app').innerHTML=css+`<div class="ls"><div class="lshero"><span class="eyebrow">TRAINING LOG / 02</span><h1>Il tuo diario.</h1><p class="muted">Percorsi, tempi e progressi di ogni uscita.</p></div><div class="lsnums"><div><small>Distanza totale</small><strong>${fmt(km)} <small style="display:inline;font-size:.35em">km</small></strong></div><div><small>Allenamenti</small><strong>${list.length}</strong></div><div><small>In movimento</small><strong>${fmtTime(total)}</strong></div><div><small>Settimane consecutive</small><strong>${streak()}</strong></div></div><div class="lsgrid"><div><section class="panel"><div class="lshead"><div><span class="eyebrow">Archivio</span><h2>Ultime corse</h2></div><button id="lsAll" class="lsbtn">Vedi tutte ↗</button></div>${list.slice(0,3).map(activityRow).join('')||'<p class="empty">Il tuo diario è pronto per la prima corsa.</p>'}</section><section class="panel"><span class="eyebrow">Andamento</span><h2>Carico per uscita</h2><div><button class="lsbtn" data-metric="km">Distanza · km</button> <button class="lsbtn" data-metric="min">Tempo · min</button></div><div id="lsChart"></div><small class="lsmeta">Ultime 10 attività · dalla meno recente</small></section><section class="panel"><div class="lshead"><div><span class="eyebrow">Podio personale</span><h2>Le tue medaglie</h2></div><select id="lsTarget" aria-label="Distanza per il podio">${medalCategories().map(i=>`<option value="${i}" ${i===target?'selected':''}>${medalLabel(i)}</option>`).join('')}</select></div><div id="lsPodium"></div><p class="lsnote">Oro, argento e bronzo vengono assegnati automaticamente ai tre migliori tempi, una prestazione per corsa. Con il GPS usiamo i campioni del percorso. Con i dati manuali usiamo la corsa intera e gli intertempi misurati.</p></section></div><div><section class="panel"><span class="eyebrow">Calendario</span><h2>Giorni di corsa</h2><div id="lsCalendar"></div></section><section class="panel coach"><span class="eyebrow">Prossimo allenamento</span><h2>La prossima uscita</h2>${coachControls(list)}</section></div></div></div>`;
+    document.querySelector('#app').innerHTML=css+`<div class="ls"><div class="lshero"><span class="eyebrow">TRAINING LOG / 02</span><h1>Il tuo diario.</h1><p class="muted">Percorsi, tempi e progressi di ogni uscita.</p></div><div class="lsnums"><div><small>Distanza totale</small><strong>${fmt(km)} <small style="display:inline;font-size:.35em">km</small></strong></div><div><small>Allenamenti</small><strong>${list.length}</strong></div><div><small>In movimento</small><strong>${fmtTime(total)}</strong></div><div><small>Settimane consecutive</small><strong>${streak()}</strong></div></div><div class="lsgrid"><div><section class="panel"><div class="lshead"><div><span class="eyebrow">Archivio</span><h2>Ultime corse</h2></div><button id="lsAll" class="lsbtn">Vedi tutte ↗</button></div>${list.slice(0,3).map(activityRow).join('')||'<p class="empty">Il tuo diario è pronto per la prima corsa.</p>'}</section><section class="panel"><span class="eyebrow">Andamento</span><h2>Carico per uscita</h2><div><button class="lsbtn" data-metric="km">Distanza · km</button> <button class="lsbtn" data-metric="min">Tempo · min</button></div><div id="lsChart"></div><small class="lsmeta">Ultime 10 attività · dalla meno recente</small></section><section class="panel"><div class="lshead"><div><span class="eyebrow">Podio personale</span><h2>Le tue medaglie</h2></div><select id="lsTarget" aria-label="Distanza per il podio">${medalCategories().map(i=>`<option value="${i}" ${i===target?'selected':''}>${medalLabel(i)}</option>`).join('')}</select></div><div id="lsPodium"></div><p class="lsnote">Oro, argento e bronzo vengono assegnati automaticamente ai tre migliori tempi, una prestazione per corsa. Con il GPS usiamo i campioni del percorso. Con i dati manuali usiamo la corsa intera e gli intertempi misurati.</p></section></div><div><section class="panel"><span class="eyebrow">Calendario</span><h2>Giorni di corsa</h2><div id="lsCalendar"></div></section><button type="button" class="panel coach" id="openCoach" style="width:100%;text-align:left;cursor:pointer;color:inherit"><span class="eyebrow">RUNLOG / COACH PERSONALE</span><h2>La prossima uscita ↗</h2><p>Apri il coach per preparare il tuo allenamento.</p></button></div></div></div>`;
     document.querySelector('#lsAll').onclick=()=>openList('Tutte le attività',list);
     document.querySelector('#lsTarget').onchange=e=>{target=Number(e.target.value);medals()};
     document.querySelectorAll('[data-metric]').forEach(b=>b.onclick=()=>{metric=b.dataset.metric;chart()});
-    const feeling=document.querySelector('#coachFeeling'),objective=document.querySelector('#coachObjective');
-    const refresh=()=>{document.querySelector('#coachPlan').innerHTML=coaching(list,feeling.value,objective.value,document.querySelector('#coachMode').value,Number(document.querySelector('#coachBudget').value),document.querySelector('#coachTerrain').value)};
-    document.querySelector('#coachBudget').onchange=document.querySelector('#coachTerrain').onchange=document.querySelector('#coachMode').onchange=feeling.onchange=objective.onchange=refresh;
+    document.querySelector('#openCoach').onclick=()=>coachRoom(list);
     calendar();medals();chart();
   }
   return {render};
