@@ -19,6 +19,34 @@
 #livePanel .eactions{display:flex;flex-wrap:wrap;gap:8px}
 #livePanel .btn{min-height:44px}
 @media(max-width:650px){#liveDashboard .liveMetrics{grid-template-columns:repeat(6,minmax(0,1fr));gap:5px}#liveDashboard .liveMetrics>div{grid-column:span 2;padding:8px}#liveDashboard .liveMetrics>div:nth-child(-n+2){grid-column:span 3}#liveDashboard .liveMetrics small{font-size:12px}#phaseActions .btn{flex:1;padding:8px}}
+#phaseActions #editCurrent{background:#fff;color:#172319;border:2px solid #fff;font-weight:700}
+#phaseActions #insertCurrent{background:#ceff52;color:#14200d;border:2px solid #ceff52;font-weight:700}
+.phaseShortcuts{display:flex;gap:6px}.phaseShortcuts button{flex:1;min-height:44px;background:#f0f4e9;color:#1a2715;border:1px solid #a4b099;border-radius:10px;font-weight:bold}
+@media(max-width:760px),(max-height:540px){
+#livePanel.raceMode{position:fixed;inset:0;z-index:6;margin:0;border:0;border-radius:0;padding:8px 12px;padding-bottom:max(8px,env(safe-area-inset-bottom));height:100vh;height:100dvh;background:var(--paper);display:grid;grid-template-rows:minmax(0,1fr) auto auto;gap:5px}
+.raceMode #liveDashboard{min-height:0;width:100%;display:grid;grid-template-rows:auto minmax(60px,1fr) auto auto;gap:6px;overflow:auto;overscroll-behavior:contain}
+.raceMode #liveDashboard .liveHead{margin:0;display:flex;align-items:center;justify-content:space-between;gap:5px}
+.raceMode #liveDashboard h1{font-size:22px;margin:0}
+.raceMode #liveDashboard .run-map{height:100%;max-height:none;border-radius:12px}
+.raceMode #liveDashboard .liveMetrics{margin:0;gap:4px}
+.raceMode #liveDashboard .liveMetrics>div{padding:5px 8px}
+.raceMode #liveDashboard .liveMetrics strong{margin:0}
+.raceMode .phaseCard{gap:5px;padding:10px 12px}
+.raceMode .phaseCard h2{margin:0;line-height:1.12}
+.raceMode #phaseClock strong{line-height:1}
+.raceMode #phaseActions .btn{min-height:48px}
+.raceMode #liveStatus{margin:0;font-size:12px;line-height:1.25}
+.raceMode .eactions{margin:0;gap:6px}
+.raceMode .eactions button{flex:1;padding:8px;min-height:46px}
+.raceMode #discardLive{font-size:12px}
+}
+@media(max-height:480px) and (orientation:landscape){
+.raceMode #liveDashboard{grid-template-columns:1fr 1fr;grid-template-rows:auto 1fr auto}
+.raceMode .liveHead{grid-column:1/-1}.raceMode #liveMap{grid-column:1;grid-row:2/4}
+.raceMode #liveDashboard .liveMetrics{grid-column:2;grid-template-columns:repeat(3,1fr)}
+.raceMode #liveDashboard .liveMetrics>div{grid-column:auto}
+.raceMode .phaseCard{grid-column:2}
+}
 </style></head><body><header class="top"><div class="topin"><button class="brand" onclick="go('home')" aria-label="Runlog, home"><span class="brandmark"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="m2 19 8-14h5L7 19zm9 0 8-14h4l-8 14z" fill="currentColor"/></svg></span>Runlog</button><nav class="topnav"><button data-view="home" onclick="go('home')">Panoramica</button><button data-view="new" onclick="go('new')">Registra</button><button data-view="stats" onclick="go('stats')">Attività e statistiche</button></nav><button class="backup" onclick="backup()">⇅ &nbsp; Backup</button></div></header><main id="app"></main><footer class="foot"><span class="micro">Runlog / Diario di corsa</span><span class="micro">Archivio personale</span></footer><dialog id="modal"></dialog><div id="notice" hidden role="status"></div><script>
 'use strict';
 const app=document.getElementById('app'),modal=document.getElementById('modal'),key='runlog.archive.v1';
@@ -476,15 +504,21 @@ function advanceLivePhase(s, now){
 }
 function changeLivePhase(insert){
   const s=liveState,p=advanceLivePhase(s,Math.floor(liveSeconds()));
-  dialogBox(insert?'Inizia un blocco adesso':'Modifica il blocco in corso','<form id="changePhase" class="phaseEdit"><label>Tipo di blocco<input name="name" list="phaseNames" maxlength="48" required></label><label>Durata totale · min:sec<input name="length" placeholder="2:00" required pattern="[0-9]{1,3}:[0-5][0-9]"></label><p class="muted">'+(insert?'Al tocco su Inizia adesso si chiude il blocco corrente. Dopo questa variazione riparte la fase successiva del programma.':'La durata include il tempo già passato in questo blocco. La modifica vale solo per questa volta.')+'</p><button class="btn primary">'+(insert?'Inizia adesso':'Applica a questo blocco')+'</button></form>');
+  dialogBox(insert?'Inizia un blocco adesso':'Modifica il blocco in corso','<form method="dialog" id="changePhase" class="phaseEdit"><div class="phaseShortcuts"><button type="button" data-label="Camminata">Camminata</button><button type="button" data-label="Corsa">Corsa</button><button type="button" data-label="Sprint">Sprint</button></div><label>Tipo di blocco<input name="phaseLabel" list="phaseNames" maxlength="48" required></label><label>Durata totale · min:sec<input name="phaseDuration" placeholder="2:00" required pattern="[0-9]{1,3}:[0-5][0-9]"></label><div class="phaseShortcuts"><button type="button" data-time="1:00">1 min</button><button type="button" data-time="2:00">2 min</button><button type="button" data-time="3:00">3 min</button></div><p class="muted">'+(insert?'Al tocco su Inizia adesso si chiude il blocco corrente. Dopo questa variazione riparte la fase successiva del programma.':'La durata include il tempo già passato in questo blocco. La modifica vale solo per questa volta.')+'</p><button class="btn primary">'+(insert?'Inizia adesso':'Applica a questo blocco')+'</button></form>');
   const f=document.querySelector('#changePhase');
-  f.elements.name.value=insert?'Sprint':p.name;
+  const nameField=f.elements.namedItem('phaseLabel'),timeField=f.elements.namedItem('phaseDuration');
+  nameField.value=insert?'Sprint':p.name;
   const length=insert?60:(p.end===null?Math.floor(liveSeconds())-p.start+60:p.end-p.start);
-  f.elements.length.value=Math.floor(length/60)+':'+String(length%60).padStart(2,'0');
+  timeField.value=Math.floor(length/60)+':'+String(length%60).padStart(2,'0');
+  f.onclick=e=>{
+    const preset=e.target.closest('button[type=button]');
+    if(preset?.dataset.label)nameField.value=preset.dataset.label;
+    if(preset?.dataset.time)timeField.value=preset.dataset.time;
+  };
   f.onsubmit=e=>{
     e.preventDefault();
-    const now=Math.floor(liveSeconds()),current=advanceLivePhase(s,now),name=f.elements.name.value.trim();
-    const [m,sec]=f.elements.length.value.split(':').map(Number),duration=m*60+sec;
+    const now=Math.floor(liveSeconds()),current=advanceLivePhase(s,now),name=nameField.value.trim();
+    const [m,sec]=timeField.value.split(':').map(Number),duration=m*60+sec;
     if(!name||!duration)return toast('Indica nome e durata positiva.');
     if(!insert && current!==p){modal.close();paintLive();return toast('Il blocco è terminato. Puoi correggerlo nel riepilogo.')}
     if(!insert && current.start+duration<=now)return toast('La durata deve superare il tempo già corso nel blocco.');
@@ -504,6 +538,7 @@ function paintLive(message){
   const root=document.querySelector('#livePanel');if(!root)return;
   const s=liveState,seconds=liveSeconds();
   const ready=Array.isArray(s?.plan);
+  root.classList.toggle('raceMode',ready);
   root.querySelector('#liveSetup').hidden=ready;
   root.querySelector('#liveDashboard').hidden=!ready;
   root.querySelector('#startLive').hidden=!!s?.running;
@@ -523,7 +558,7 @@ function paintLive(message){
     }
   }
   root.querySelector('#liveDistance').textContent=numberIT(s?.km||0);root.querySelector('#liveTime').textContent=fmtTime(seconds);root.querySelector('#liveElapsed').textContent=fmtTime(s?(Date.now()-s.started)/1000:0);root.querySelector('#livePace').textContent=s?.km>0?fmtPace(seconds/s.km):'—';root.querySelector('#liveSpeed').textContent=s?.running?numberIT((s.speed||0)*3.6):'0';
-  root.querySelector('#startLive').textContent=s?.running?'In registrazione…':s?'Riprendi':'Avvia GPS';root.querySelector('#startLive').disabled=!!s?.running;root.querySelector('#pauseLive').disabled=!s?.running;root.querySelector('#finishLive').disabled=!(s?.km>0&&seconds>0);root.querySelector('#discardLive').hidden=!s;if(message)root.querySelector('#liveStatus').textContent=message;
+  root.querySelector('#startLive').textContent=s?.running?'In registrazione…':s?'Riprendi':'Avvia GPS';root.querySelector('#startLive').disabled=!!s?.running;root.querySelector('#pauseLive').disabled=!s?.running;root.querySelector('#finishLive').disabled=!(s?.km>0&&seconds>0);root.querySelector('#discardLive').hidden=!s||s.running;if(message)root.querySelector('#liveStatus').textContent=message;
 }
 function showLive(){
   if(!liveState)liveState=readLiveDraft();
@@ -540,7 +575,7 @@ function showLive(){
       </section>
     </div>
     <p id="liveStatus" role="status">${liveState?'Copia recuperata. Premi Riprendi oppure rivedi l’attività.':'Pronto quando vuoi.'}</p>
-    <div class="eactions"><button class="btn primary" id="startLive">Avvia GPS</button><button class="btn" id="pauseLive">Pausa</button><button class="btn" id="finishLive">Termina e rivedi attività</button><button class="btn" id="discardLive">Scarta registrazione</button></div>
+    <div class="eactions"><button class="btn primary" id="startLive">Avvia GPS</button><button class="btn" id="pauseLive">Pausa</button><button class="btn" id="finishLive">Termina</button><button class="btn" id="discardLive">Scarta registrazione</button></div>
   </section>`;
   document.querySelector('#editCurrent').onclick=()=>changeLivePhase(false);document.querySelector('#insertCurrent').onclick=()=>changeLivePhase(true);
   const toggle=document.querySelector('#usePlan'),fields=document.querySelector('#planFields'),rows=document.querySelector('#phaseRows');
