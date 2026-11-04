@@ -527,6 +527,7 @@ function resumeLive(){
       }
     }
     liveState.signals=document.querySelector('#phaseSignals').checked;
+    liveState.coachMessages=document.querySelector('#coachLiveEnabled').checked;
     liveState.plan=plan;document.querySelector('#planFields').disabled=true;document.querySelector('#usePlan').disabled=true;
   }
   if(liveState.signals!==false)enablePhaseAudio();
@@ -587,6 +588,34 @@ function actualPhases(s,total){
   advanceLivePhase(s,total);
   return s.timeline.filter(p=>p.start<total).map(({name,start})=>({name,start}));
 }
+function coachLiveMessage(s,seconds,phase){
+  if(!s?.coachMessages||!s.running||!s.since)return null;
+  const memory=s.coachCueState||(s.coachCueState={km:0,phase:null,lastAt:-180,reminder:0});
+  const km=Math.floor(s.km);
+  const changed=phase&&phase.start!==memory.phase;
+  memory.phase=phase?.start;
+  let text='';
+  if(km>memory.km){
+    memory.km=km;
+    text='Hai completato '+km+' km. Passo medio '+fmtPace(seconds/s.km)+' al km.';
+  }else if(changed&&phase&&seconds-memory.lastAt>=180){
+    text=/cammin|recuper/i.test(phase.name)?'Ora recupera. Cammina e valuta come ti senti prima di ripartire.':'Riparti con un ritmo che senti controllato.';
+  }else if(seconds>=180&&seconds-memory.lastAt>=300){
+    const prompts=['Controlla come ti senti. Puoi allungare il recupero con +30 s.','Se la fatica aumenta, passa al cammino con Modifica blocco.','Cerca un ritmo regolare. Alla fine annota come sono andati gli ultimi blocchi.'];
+    text=prompts[memory.reminder%prompts.length];memory.reminder++;
+  }
+  if(!text||seconds-memory.lastAt<60)return null;
+  memory.lastAt=seconds;
+  return text;
+}
+function paintCoachMessage(root,s,seconds,phase){
+  const box=root.querySelector('#liveCoachNote');
+  if(!box)return;
+  if(!s?.coachMessages||!s.running){box.hidden=true;return}
+  const message=coachLiveMessage(s,seconds,phase);
+  if(message){box.querySelector('span').textContent=message;box.dataset.until=String(seconds+18);box.hidden=false}
+  else if(seconds>=Number(box.dataset.until||0))box.hidden=true;
+}
 function paintLive(message){
   const root=document.querySelector('#livePanel');if(!root)return;
   const s=liveState,seconds=liveSeconds();
@@ -609,6 +638,7 @@ function paintLive(message){
       else if(timed&&left>=1&&left<=3&&cue!==lastCue)playPhaseCue(false);
       lastCue=cue;
     }
+    paintCoachMessage(root,s,seconds,p);
     root.querySelector('#phaseNow').textContent=p.name;
     root.querySelector('#phaseClock').hidden=!timed;
     const progress=root.querySelector('#phaseProgress');
@@ -624,10 +654,10 @@ function paintLive(message){
 function showLive(){
   if(!liveState)liveState=readLiveDraft();
   app.innerHTML=`<section class="panel" id="livePanel">
-    <div id="liveSetup"><span class="eyebrow">Outdoor / GPS</span><h1>La tua corsa, dal vivo.</h1><p class="muted">Consenti la posizione precisa. Mantieni questa pagina visibile e lo schermo acceso. Se cambi app o blocchi il telefono, la registrazione va in pausa. Il tempo attivo usa le pause manuali e può includere brevi soste.</p><div class="liveSettings"><label class="liveSetting"><span class="settingIcon" aria-hidden="true">☀</span><span><b>Mantieni acceso lo schermo</b><small>Tieni visibili tempo e passo mentre corri.</small></span><input class="liveToggle" id="keepOn" type="checkbox" checked></label><small id="lockState" role="status"></small><div class="liveSetting"><span class="settingIcon" aria-hidden="true">↻</span><label for="usePlan"><b>Intervalli guidati</b><small>Alterna le fasi con un conto alla rovescia.</small></label><input class="liveToggle" id="usePlan" type="checkbox" aria-controls="planFields"></div><label class="liveSetting"><span class="settingIcon" aria-hidden="true">♫</span><span><b>Avvisi cambio blocco</b><small>Tre bip prima del cambio e uno lungo al via. Vibrazione sui dispositivi compatibili.</small></span><input id="phaseSignals" class="liveToggle" type="checkbox" checked></label><fieldset id="planFields" hidden><legend>La tua sequenza</legend><div id="phaseRows"></div><button class="btn" id="morePhase" type="button">+ Aggiungi fase</button><small>Al termine, la sequenza riparte dalla prima fase.</small></fieldset></div></div>
+    <div id="liveSetup"><span class="eyebrow">Outdoor / GPS</span><h1>La tua corsa, dal vivo.</h1><p class="muted">Consenti la posizione precisa. Mantieni questa pagina visibile e lo schermo acceso. Se cambi app o blocchi il telefono, la registrazione va in pausa. Il tempo attivo usa le pause manuali e può includere brevi soste.</p><div class="liveSettings"><label class="liveSetting"><span class="settingIcon" aria-hidden="true">☀</span><span><b>Mantieni acceso lo schermo</b><small>Tieni visibili tempo e passo mentre corri.</small></span><input class="liveToggle" id="keepOn" type="checkbox" checked></label><small id="lockState" role="status"></small><div class="liveSetting"><span class="settingIcon" aria-hidden="true">↻</span><label for="usePlan"><b>Intervalli guidati</b><small>Alterna le fasi con un conto alla rovescia.</small></label><input class="liveToggle" id="usePlan" type="checkbox" aria-controls="planFields"></div><label class="liveSetting"><span class="settingIcon" aria-hidden="true">♫</span><span><b>Avvisi cambio blocco</b><small>Tre bip prima del cambio e uno lungo al via. Vibrazione sui dispositivi compatibili.</small></span><input id="phaseSignals" class="liveToggle" type="checkbox" checked></label><label class="liveSetting"><span class="settingIcon" aria-hidden="true">✦</span><span><b>Messaggi del coach durante la corsa</b><small>Brevi messaggi sulla mappa con chilometri, recuperi e suggerimenti. Puoi chiuderli con ×. Scelta valida per questa registrazione.</small></span><input id="coachLiveEnabled" class="liveToggle" type="checkbox"></label><fieldset id="planFields" hidden><legend>La tua sequenza</legend><div id="phaseRows"></div><button class="btn" id="morePhase" type="button">+ Aggiungi fase</button><small>Al termine, la sequenza riparte dalla prima fase.</small></fieldset></div></div>
     <div id="liveDashboard" hidden>
       <header class="liveHead"><span class="eyebrow">Runlog / Live GPS</span><h1 id="sessionTitle">Corsa in corso</h1></header>
-      <div id="liveMap" aria-label="Mappa del percorso GPS"></div>
+      <div id="liveMap" aria-label="Mappa del percorso GPS"></div><aside id="liveCoachNote" hidden style="position:absolute;top:60px;left:16px;right:16px;z-index:8;padding:12px 14px;border-radius:14px;background:#193b2a;color:#fff;box-shadow:0 8px 20px #0003;max-width:480px;margin:auto"><span role="status" aria-live="polite"></span><button type="button" id="dismissCoachNote" aria-label="Chiudi messaggio del coach" style="float:right;background:transparent;color:white;border:0;font-size:22px">×</button></aside>
       <div class="liveMetrics"><div><small>Distanza · km</small><strong id="liveDistance">0</strong></div><div><small>Tempo attivo</small><strong id="liveTime">0:00</strong></div><div><small>Passo medio · min/km</small><strong id="livePace">—</strong></div><div><small>Velocità · km/h</small><strong id="liveSpeed">0</strong></div><div><small>Tempo trascorso</small><strong id="liveElapsed">0:00</strong></div></div>
       <section class="phaseCard"><div><span class="eyebrow">Blocco in corso</span><h2 id="phaseNow"></h2></div>
         <div id="phaseClock"><strong id="phaseRemaining"></strong><small>rimanenti</small></div>
@@ -639,6 +669,8 @@ function showLive(){
     <p id="liveStatus" role="status">${liveState?'Copia recuperata. Premi Riprendi oppure rivedi l’attività.':'Pronto quando vuoi.'}</p>
     <div class="eactions"><button class="btn primary" id="startLive">Avvia GPS</button><button class="btn" id="pauseLive">Pausa</button><button class="btn" id="finishLive">Termina</button><button class="btn" id="discardLive">Scarta registrazione</button></div>
   </section>`;
+  document.querySelector('#coachLiveEnabled').checked=liveState?.coachMessages===true;
+  document.querySelector('#dismissCoachNote').onclick=()=>{document.querySelector('#liveCoachNote').hidden=true;document.querySelector('#liveCoachNote').dataset.until='0'};
   document.querySelector('#quickPhase').onclick=e=>{const b=e.target.closest('[data-extra]');if(b)quickPhase(Number(b.dataset.extra))};
   document.querySelector('#editCurrent').onclick=()=>changeLivePhase(false);document.querySelector('#insertCurrent').onclick=()=>changeLivePhase(true);
   const toggle=document.querySelector('#usePlan'),fields=document.querySelector('#planFields'),rows=document.querySelector('#phaseRows');
